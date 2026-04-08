@@ -18,7 +18,9 @@ function App() {
             path="/dashboard"
             element={
               <ProtectedRoute>
-                <Dashboard />
+                <div className="min-h-screen bg-slate-950">
+                  <Dashboard />
+                </div>
               </ProtectedRoute>
             }
           />

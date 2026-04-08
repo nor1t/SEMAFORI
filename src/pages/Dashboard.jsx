@@ -1,312 +1,451 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../services/supabaseClient';
+import Header from '../components/Header';
+
+const incidentTypes = ['Aksident', 'Konstruksion', 'Trafik i Rëndë', 'Moti'];
+const severityOptions = ['Minore', 'Moderate', 'Madhore'];
+const statusOptions = [
+  { value: 'active', label: 'Aktiv', badge: 'bg-emerald-500/15 text-emerald-300' },
+  { value: 'under_control', label: 'Nën Kontroll', badge: 'bg-amber-500/15 text-amber-300' },
+  { value: 'cleared', label: 'Pastruar', badge: 'bg-sky-500/15 text-sky-300' },
+];
 
 const Dashboard = () => {
-  const { user, signOut, loading } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
-  
-  const [items, setItems] = useState([]);
+  const [reports, setReports] = useState([]);
   const [loadingData, setLoadingData] = useState(false);
-  const [formData, setFormData] = useState({ title: '', description: '', status: 'active' });
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    type: incidentTypes[0],
+    severity: severityOptions[1],
+    status: 'active',
+  });
   const [editingId, setEditingId] = useState(null);
   const [message, setMessage] = useState({ text: '', type: '' });
+  const [submitting, setSubmitting] = useState(false);
 
-  const fetchUserData = async () => {
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/login');
+    }
+  }, [loading, user, navigate]);
+
+  const fetchReports = async () => {
+    if (!user) return;
     setLoadingData(true);
     try {
       const { data, error } = await supabase
         .from('user_data')
         .select('*')
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      setItems(data || []);
-    } catch (error) {
-      setMessage({ text: 'Gabim gjatë leximit të të dhënave', type: 'error' });
+      setReports(data || []);
+    } catch (err) {
+      setMessage({ text: 'Nuk mund të ngarkohen raportet nga Supabase.', type: 'error' });
     } finally {
       setLoadingData(false);
     }
   };
 
   useEffect(() => {
-    if (user) fetchUserData();
+    if (user) fetchReports();
   }, [user]);
 
-  const handleSubmit = async (e) => {
+  const showMessage = (text, type = 'success') => {
+    setMessage({ text, type });
+    setTimeout(() => setMessage({ text: '', type: '' }), 3200);
+  };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({
+      title: '',
+      description: '',
+      type: incidentTypes[0],
+      severity: severityOptions[1],
+      status: 'active',
+    });
+  };
+
+  const handleSubmit = async (e, retryCount = 0) => {
     e.preventDefault();
     if (!formData.title.trim()) {
-      setMessage({ text: 'Titulli është i detyrueshëm', type: 'error' });
+      showMessage('Titulli është i nevojshëm.', 'error');
       return;
     }
+
+    // Check if offline
+    if (!navigator.onLine) {
+      showMessage('Jeni offline. Kontrolloni lidhjen tuaj të internetit dhe provoni përsëri.', 'error');
+      return;
+    }
+
+    setSubmitting(true);
+
     try {
-      const { error } = await supabase.from('user_data').insert([{
+      const payload = {
         user_id: user.id,
-        title: formData.title,
-        description: formData.description,
-        status: formData.status
-      }]);
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        type: formData.type,
+        severity: formData.severity,
+        status: formData.status,
+      };
+
+      // Add timeout
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Kërkesa ka skaduar. Provoni përsëri.')), 15000);
+      });
+
+      const submitPromise = supabase.from('user_data').insert([payload]);
+
+      const { error } = await Promise.race([submitPromise, timeoutPromise]);
+
       if (error) throw error;
-      setMessage({ text: '✨ Të dhënat u shtuan me sukses!', type: 'success' });
-      setFormData({ title: '', description: '', status: 'active' });
-      fetchUserData();
-      setTimeout(() => setMessage({ text: '', type: '' }), 3000);
-    } catch (error) {
-      setMessage({ text: 'Gabim gjatë shtimit', type: 'error' });
+      resetForm();
+      await fetchReports();
+      showMessage('Incidenti u shtua me sukses.');
+    } catch (err) {
+      let message = 'Nuk mund të ruhet incidenti.';
+
+      if (err.message.includes('timeout') || err.message.includes('skaduar')) {
+        message = 'Kërkesa ka skaduar. Provoni përsëri.';
+      } else if (err.message.includes('network') || err.message.includes('fetch')) {
+        message = 'Problem me lidhjen. Kontrolloni internetin dhe provoni përsëri.';
+      }
+
+      showMessage(message, 'error');
+
+      // Auto-retry for network errors, up to 2 retries
+      if ((err.message.includes('network') || err.message.includes('timeout') || err.message.includes('fetch')) && retryCount < 2) {
+        console.log(`Retrying submit... Attempt ${retryCount + 1}`);
+        setTimeout(() => handleSubmit({ preventDefault: () => {} }, retryCount + 1), 3000);
+        showMessage(`${message} (Duke provuar përsëri...)`, 'error');
+        return;
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleUpdate = async (id) => {
-    if (!formData.title.trim()) return;
+    if (!formData.title.trim()) {
+      showMessage('Titulli është i nevojshëm.', 'error');
+      return;
+    }
+
     try {
+      const payload = {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        type: formData.type,
+        severity: formData.severity,
+        status: formData.status,
+      };
       const { error } = await supabase
         .from('user_data')
-        .update({ title: formData.title, description: formData.description, status: formData.status, updated_at: new Date() })
-        .eq('id', id).eq('user_id', user.id);
+        .update(payload)
+        .eq('id', id)
+        .eq('user_id', user.id);
       if (error) throw error;
-      setMessage({ text: '✏️ Të dhënat u përditësuan!', type: 'success' });
+      resetForm();
       setEditingId(null);
-      setFormData({ title: '', description: '', status: 'active' });
-      fetchUserData();
-      setTimeout(() => setMessage({ text: '', type: '' }), 3000);
-    } catch (error) {
-      setMessage({ text: 'Gabim gjatë përditësimit', type: 'error' });
+      await fetchReports();
+      showMessage('Incidenti u përditësua me sukses.');
+    } catch (err) {
+      showMessage('Nuk mund të përditësohet incidenti në Supabase.', 'error');
     }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('A jeni i sigurt që doni ta fshini?')) return;
+    if (!window.confirm('Fshi këtë raport incidenti?')) return;
     try {
-      const { error } = await supabase.from('user_data').delete().eq('id', id).eq('user_id', user.id);
+      const { error } = await supabase
+        .from('user_data')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id);
       if (error) throw error;
-      setMessage({ text: '🗑️ Të dhënat u fshinë!', type: 'success' });
-      fetchUserData();
-      setTimeout(() => setMessage({ text: '', type: '' }), 3000);
-    } catch (error) {
-      setMessage({ text: 'Gabim gjatë fshirjes', type: 'error' });
+      await fetchReports();
+      showMessage('Incidenti u hoq nga paneli yt.');
+    } catch (err) {
+      showMessage('Nuk mund të hiqet incidenti nga Supabase.', 'error');
     }
   };
 
-  const startEditing = (item) => {
-    setEditingId(item.id);
-    setFormData({ title: item.title, description: item.description || '', status: item.status });
+  const startEditing = (report) => {
+    setEditingId(report.id);
+    setFormData({
+      title: report.title,
+      description: report.description,
+      type: report.type,
+      severity: report.severity,
+      status: report.status,
+    });
   };
 
-  const cancelEditing = () => {
-    setEditingId(null);
-    setFormData({ title: '', description: '', status: 'active' });
-  };
+  const stats = useMemo(() => {
+    const active = reports.filter((item) => item.status === 'active').length;
+    const control = reports.filter((item) => item.status === 'under_control').length;
+    const cleared = reports.filter((item) => item.status === 'cleared').length;
+    return { total: reports.length, active, control, cleared };
+  }, [reports]);
 
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/login');
-  };
-
-  // Funksion për të marrë ngjyrat sipas statusit
-  const getStatusColor = (status) => {
-    switch(status) {
-      case 'active': return 'bg-gradient-to-r from-green-400 to-green-500';
-      case 'pending': return 'bg-gradient-to-r from-yellow-400 to-yellow-500';
-      case 'completed': return 'bg-gradient-to-r from-blue-400 to-blue-500';
-      default: return 'bg-gradient-to-r from-gray-400 to-gray-500';
-    }
+  const statusBadge = (status) => {
+    const option = statusOptions.find((item) => item.value === status);
+    return option ? option.badge : 'bg-slate-500/15 text-slate-300';
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      {/* Navbar kreative */}
-      <nav className="bg-gray-800/80 backdrop-blur-md shadow-lg border-b border-gray-700/50 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold text-xl">📋</span>
-              </div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                Creative Dashboard
-              </h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 bg-gray-700/60 px-4 py-2 rounded-full shadow-inner border border-gray-600">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold">
-                  {user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0) || 'U'}
-                </div>
-                <span className="text-sm font-medium text-gray-300">
-                  {user?.user_metadata?.full_name || user?.email?.split('@')[0]}
-                </span>
-              </div>
-              <button
-                onClick={handleLogout}
-                disabled={loading}
-                className="px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 text-white font-semibold rounded-full shadow-md hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-              >
-                🚪 Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      {/* Përmbajtja kryesore */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Mesazhet me stil */}
+    <div className="dark:text-slate-100 text-gray-900">
+      <Header reports={reports} />
+      <main className="mx-auto max-w-7xl px-4 py-8 pt-24 sm:px-6 lg:px-8">
         {message.text && (
-          <div className={`mb-6 p-4 rounded-2xl shadow-lg backdrop-blur-sm animate-bounceIn ${
-            message.type === 'success' 
-              ? 'bg-green-900/30 border-l-8 border-green-500 text-green-400' 
-              : 'bg-red-900/30 border-l-8 border-red-500 text-red-400'
+          <div className={`mb-6 rounded-3xl border px-5 py-4 text-sm shadow-xl ${
+            message.type === 'error'
+              ? 'dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200 border-rose-500/30 bg-rose-500/10 text-rose-800'
+              : 'dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 border-emerald-500/30 bg-emerald-500/10 text-emerald-800'
           }`}>
-            <div className="flex items-center">
-              <span className="text-2xl mr-3">{message.type === 'success' ? '🎉' : '⚠️'}</span>
-              <p className="font-medium">{message.text}</p>
-            </div>
+            {message.text}
           </div>
         )}
 
-        {/* Forma kreative */}
-        <div className="bg-gray-800/40 backdrop-blur-md rounded-2xl shadow-2xl p-6 mb-8 border border-gray-700/50 transition-all duration-300 hover:shadow-xl">
-          <div className="flex items-center mb-4">
-            <div className="w-10 h-10 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full flex items-center justify-center shadow-md">
-              <span className="text-white text-xl">{editingId ? '✏️' : '➕'}</span>
+        <section className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
+          <div className="space-y-6">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="rounded-3xl dark:border dark:border-slate-800/80 dark:bg-slate-900/80 border border-gray-200 bg-white/80 p-5 shadow-xl backdrop-blur-xl">
+                <p className="text-sm uppercase tracking-[0.25em] dark:text-slate-400 text-gray-600">Total raportet</p>
+                <p className="mt-4 text-4xl font-semibold dark:text-white text-gray-900">{stats.total}</p>
+              </div>
+              <div className="rounded-3xl dark:border dark:border-slate-800/80 dark:bg-slate-900/80 border border-gray-200 bg-white/80 p-5 shadow-xl backdrop-blur-xl">
+                <p className="text-sm uppercase tracking-[0.25em] dark:text-slate-400 text-gray-600">Aktiv</p>
+                <p className="mt-4 text-4xl font-semibold dark:text-cyan-300 text-cyan-700">{stats.active}</p>
+              </div>
+              <div className="rounded-3xl dark:border dark:border-slate-800/80 dark:bg-slate-900/80 border border-gray-200 bg-white/80 p-5 shadow-xl backdrop-blur-xl">
+                <p className="text-sm uppercase tracking-[0.25em] dark:text-slate-400 text-gray-600">Pastruar</p>
+                <p className="mt-4 text-4xl font-semibold dark:text-sky-300 text-sky-700">{stats.cleared}</p>
+              </div>
             </div>
-            <h2 className="text-2xl font-bold ml-3 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-              {editingId ? 'Edit Item' : 'Create New Item'}
-            </h2>
+
+            <div className="rounded-3xl dark:border dark:border-slate-800/80 dark:bg-slate-900/80 border border-gray-200 bg-white/80 p-6 shadow-xl backdrop-blur-xl">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.25em] dark:text-slate-400 text-gray-600">Operacionet aktuale</p>
+                  <h2 className="mt-3 text-3xl font-semibold dark:text-white text-gray-900">Pamja e përgjithshme e rrjedhës së trafikut</h2>
+                </div>
+                <div className="rounded-full dark:bg-slate-800/70 bg-gray-100 px-4 py-2 text-sm dark:text-slate-300 text-gray-700">
+                  {new Date().toLocaleString()}
+                </div>
+              </div>
+              <div className="mt-6 grid gap-4 lg:grid-cols-3">
+                <div className="rounded-3xl bg-slate-950/80 p-4">
+                  <p className="text-sm text-slate-400">Korridori më i prekur</p>
+                  <p className="mt-3 text-lg font-semibold text-white">Rruga I-95</p>
+                  <p className="mt-2 text-slate-400">Shumë vonesa për shkak të mbylljes së korsisë dhe trafikut të rëndë.</p>
+                </div>
+                <div className="rounded-3xl bg-slate-950/80 p-4">
+                  <p className="text-sm text-slate-400">Incidenti kryesor</p>
+                  <p className="mt-3 text-lg font-semibold text-white">Aksident në Veri Hub</p>
+                  <p className="mt-2 text-slate-400">Ekipi i përgjigjes u dërgua. Pastrimi i parashikuar në 45 min.</p>
+                </div>
+                <div className="rounded-3xl bg-slate-950/80 p-4">
+                  <p className="text-sm text-slate-400">Shëndeti i sistemit</p>
+                  <p className="mt-3 text-lg font-semibold text-white">Stabil</p>
+                  <p className="mt-2 text-slate-400">Të gjitha sistemet e monitorimit po funksionojnë normalisht.</p>
+                </div>
+              </div>
+            </div>
           </div>
-          
-          <form onSubmit={editingId ? () => handleUpdate(editingId) : handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          <aside className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
+            <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Harta e trafikut live</p>
+            <div className="mt-5 h-72 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 p-5 shadow-inner">
+              <div className="relative h-full overflow-hidden rounded-3xl border border-slate-700/70 bg-slate-950">
+                <div className="absolute left-4 top-4 h-3 w-3 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.6)]" />
+                <div className="absolute right-6 top-10 h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]" />
+                <div className="absolute left-10 bottom-12 h-3 w-3 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.6)]" />
+                <div className="absolute inset-x-5 top-32 h-1 rounded-full bg-slate-700" />
+                <div className="absolute inset-x-20 top-44 h-1 rounded-full bg-slate-700" />
+                <div className="absolute inset-x-10 top-56 h-1 rounded-full bg-slate-700" />
+                <div className="absolute left-16 top-20 h-9 w-9 rounded-full border border-slate-600 bg-slate-900" />
+                <div className="absolute right-16 top-52 h-9 w-9 rounded-full border border-slate-600 bg-slate-900" />
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <section className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+          <div className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
+            <div className="flex items-center justify-between gap-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-1">📌 Title *</label>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-4 py-2 rounded-xl border-2 border-gray-600 bg-gray-700/60 text-white placeholder-gray-400 focus:bg-gray-700 focus:border-indigo-500 transition-all outline-none"
-                  placeholder="Shkruani titullin..."
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Raporti i incidentit</p>
+                <h2 className="mt-2 text-2xl font-semibold text-white">Krijo një alarm trafiku të ri</h2>
+              </div>
+              <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-300">
+                {editingId ? 'Modaliteti i redaktimit' : 'Raport i ri'}
+              </span>
+            </div>
+
+            <form onSubmit={editingId ? (e) => {e.preventDefault(); handleUpdate(editingId);} : handleSubmit} className="mt-6 space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-200">
+                  Titulli i incidentit
+                  <input
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    placeholder="Mbyllja e rrugës në M4"
+                    className="mt-2 w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-200">
+                  Kategoria
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                    className="mt-2 w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                  >
+                    {incidentTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="block text-sm font-medium text-slate-200">
+                Përshkrimi
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows="4"
+                  placeholder="Shto detaje për incidentin dhe përgjigjen e rekomanduar."
+                  className="mt-2 w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-1">🏷️ Status</label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-4 py-2 rounded-xl border-2 border-gray-600 bg-gray-700/60 text-white focus:bg-gray-700 focus:border-indigo-500 transition-all outline-none"
-                >
-                  <option value="active">🟢 Active</option>
-                  <option value="pending">🟡 Pending</option>
-                  <option value="completed">🔵 Completed</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-1">📝 Description</label>
-              <textarea
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows="3"
-                className="w-full px-4 py-2 rounded-xl border-2 border-gray-600 bg-gray-700/60 text-white placeholder-gray-400 focus:bg-gray-700 focus:border-indigo-500 transition-all outline-none"
-                placeholder="Përshkruani detajet..."
-              />
-            </div>
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                className="px-6 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-bold rounded-full shadow-md hover:shadow-xl transition-all transform hover:scale-105"
-              >
-                {editingId ? '✏️ Update Item' : '✨ Create Item'}
-              </button>
-              {editingId && (
-                <button
-                  type="button"
-                  onClick={cancelEditing}
-                  className="px-6 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white font-bold rounded-full shadow-md hover:shadow-xl transition-all"
-                >
-                  ❌ Cancel
-                </button>
-              )}
-            </div>
-          </form>
-        </div>
+              </label>
 
-        {/* Lista e kartelave kreative */}
-        <div className="bg-gray-800/40 backdrop-blur-md rounded-2xl shadow-2xl p-6 border border-gray-700/50">
-          <div className="flex items-center mb-4">
-            <div className="w-10 h-10 bg-gradient-to-r from-green-400 to-blue-500 rounded-full flex items-center justify-center shadow-md">
-              <span className="text-white text-xl">📦</span>
-            </div>
-            <h2 className="text-2xl font-bold ml-3 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-              My Items ({items.length})
-            </h2>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label className="block text-sm font-medium text-slate-200">
+                  Rëndësia
+                  <select
+                    value={formData.severity}
+                    onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
+                    className="mt-2 w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                  >
+                    {severityOptions.map((severity) => (
+                      <option key={severity} value={severity}>
+                        {severity}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-medium text-slate-200">
+                  Statusi
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="mt-2 w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                  >
+                    {statusOptions.map((status) => (
+                      <option key={status.value} value={status.value}>
+                        {status.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex items-center gap-2 rounded-full bg-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {submitting ? (
+                    <>
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Duke ruajtur...
+                    </>
+                  ) : (
+                    editingId ? 'Përditëso raportin' : 'Shto incidentin'
+                  )}
+                </button>
+                {editingId && (
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    disabled={submitting}
+                    className="rounded-full bg-slate-800 px-6 py-3 text-sm text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    Anulo redaktimin
+                  </button>
+                )}
+              </div>
+            </form>
           </div>
 
-          {loadingData ? (
-            <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
-              <p className="mt-3 text-gray-400">Loading your magic...</p>
+          <div className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Incidentet e fundit</p>
+                <h2 className="mt-2 text-2xl font-semibold text-white">Rrjedha e raporteve</h2>
+              </div>
+              <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-300">
+                {reports.length} total
+              </span>
             </div>
-          ) : items.length === 0 ? (
-            <div className="text-center py-12 bg-gray-700/30 rounded-2xl">
-              <span className="text-6xl">✨</span>
-              <p className="mt-3 text-gray-400 font-medium">No items yet. Create your first masterpiece above!</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className="group bg-gray-800 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:scale-105 transform border border-gray-700"
-                >
-                  <div className={`h-2 ${getStatusColor(item.status)}`}></div>
-                  <div className="p-5">
-                    <div className="flex justify-between items-start">
-                      <h3 className="font-bold text-xl text-gray-100 mb-2 line-clamp-1">{item.title}</h3>
-                      <span className={`text-xs font-semibold px-2 py-1 rounded-full ${item.status === 'active' ? 'bg-green-900/40 text-green-400' : item.status === 'pending' ? 'bg-yellow-900/40 text-yellow-400' : 'bg-blue-900/40 text-blue-400'}`}>
-                        {item.status === 'active' ? '🟢 Active' : item.status === 'pending' ? '🟡 Pending' : '🔵 Completed'}
-                      </span>
-                    </div>
-                    <p className="text-gray-400 text-sm mt-2 line-clamp-2">
-                      {item.description || '📄 No description provided'}
-                    </p>
-                    <div className="mt-4 flex justify-between items-center">
-                      <span className="text-xs text-gray-500">
-                        🗓️ {new Date(item.created_at).toLocaleDateString()}
-                      </span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => startEditing(item)}
-                          className="text-indigo-400 hover:text-indigo-300 transition text-sm font-semibold px-2 py-1 rounded-lg hover:bg-indigo-900/30"
-                        >
-                          ✏️ Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="text-red-400 hover:text-red-300 transition text-sm font-semibold px-2 py-1 rounded-lg hover:bg-red-900/30"
-                        >
-                          🗑️ Delete
-                        </button>
+
+            <div className="mt-6 space-y-4">
+              {reports.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-700/70 bg-slate-950/80 p-8 text-center text-slate-400">
+                  Ende nuk ka raporte incidenti. Përdor formularin për të shtuar një dhe monitoro kushtet e trafikut.
+                </div>
+              ) : (
+                reports.map((report) => (
+                  <div key={report.id} className="rounded-3xl border border-slate-800/80 bg-slate-950/80 p-5 shadow-inner">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-sm text-slate-400 uppercase tracking-[0.2em]">{report.type}</p>
+                        <h3 className="mt-2 text-xl font-semibold text-white">{report.title}</h3>
+                        <p className="mt-2 text-slate-400">{report.description || 'Nuk janë dhënë detaje shtesë.'}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(report.status)}`}>
+                          {statusOptions.find((option) => option.value === report.status)?.label}
+                        </span>
+                        <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs text-slate-300">{report.severity}</span>
+                        <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs text-slate-300">{new Date(report.created_at).toLocaleDateString()}</span>
                       </div>
                     </div>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        onClick={() => startEditing(report)}
+                        className="rounded-full bg-slate-800 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-700"
+                      >
+                        Redakto
+                      </button>
+                      <button
+                        onClick={() => handleDelete(report.id)}
+                        className="rounded-full bg-rose-500/15 px-4 py-2 text-sm text-rose-300 transition hover:bg-rose-500/25"
+                      >
+                        Fshi
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Animacion shtesë për mesazhet */}
-      <style jsx>{`
-        @keyframes bounceIn {
-          0% { transform: scale(0.9); opacity: 0; }
-          70% { transform: scale(1.02); }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        .animate-bounceIn {
-          animation: bounceIn 0.4s ease-out;
-        }
-      `}</style>
+          </div>
+        </section>
+      </main>
     </div>
   );
 };

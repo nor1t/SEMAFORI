@@ -19,24 +19,24 @@ const Signup = () => {
   const validateForm = () => {
     const newErrors = {};
     if (!formData.name.trim()) {
-      newErrors.name = 'Name is required';
-    } else if (formData.name.length < 2) {
-      newErrors.name = 'Name must be at least 2 characters';
+      newErrors.name = 'Emri i plotë është i nevojshëm';
+    } else if (formData.name.trim().length < 2) {
+      newErrors.name = 'Emri duhet të jetë të paktën 2 karaktere';
     }
     if (!formData.email) {
-      newErrors.email = 'Email is required';
+      newErrors.email = 'Email-i është i nevojshëm';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
+      newErrors.email = 'Shkruaj një adresë email të vlefshme';
     }
     if (!formData.password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = 'Fjalëkalimi është i nevojshëm';
     } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+      newErrors.password = 'Fjalëkalimi duhet të jetë të paktën 6 karaktere';
     } else if (!/(?=.*[A-Za-z])(?=.*\d)/.test(formData.password)) {
-      newErrors.password = 'Password must contain at least one letter and one number';
+      newErrors.password = 'Përdor të paktën një shkronjë dhe një numër';
     }
     if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
+      newErrors.confirmPassword = 'Fjalëkalimet nuk përputhen';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -44,8 +44,8 @@ const Signup = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
     if (serverError) setServerError('');
     if (successMessage) setSuccessMessage('');
   };
@@ -57,44 +57,45 @@ const Signup = () => {
     if (error) {
       setServerError(error.message);
     } else {
-      setSuccessMessage('🎉 Account created successfully! Redirecting to login...');
-      setTimeout(() => navigate('/login'), 2000);
+      setSuccessMessage('Account created successfully. Redirecting to login...');
+      setTimeout(() => navigate('/login'), 1800);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <div className="max-w-md w-full animate-slide-up">
-        {/* Header kreativ */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-3xl shadow-xl mb-4 transform -rotate-3 hover:rotate-0 transition">
-            <span className="text-4xl">✨</span>
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4 py-12 text-slate-100">
+      <div className="w-full max-w-xl">
+        <div className="rounded-[2rem] border border-slate-800/80 bg-slate-900/90 p-8 shadow-2xl backdrop-blur-xl sm:p-10">
+          <div className="text-center mb-10">
+            <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-r from-emerald-500 via-cyan-500 to-sky-500 shadow-xl">
+              <span className="text-4xl">🛣️</span>
+            </div>
+            <h1 className="text-4xl font-semibold tracking-tight text-white">Bashkohuni me Komandën e Trafikut</h1>
+            <p className="mt-3 text-slate-400">Krijoni një llogari të sigurt për të menaxhuar incidentet dhe shikuar kushtet e rrugëve.</p>
           </div>
-          <h2 className="text-4xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-            Join the Journey
-          </h2>
-          <p className="mt-2 text-gray-400">Create an account to get started</p>
-        </div>
 
-        {/* Kartela e formës */}
-        <div className="bg-gray-800/40 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-gray-700/50 transition-all duration-300 hover:shadow-xl">
           {serverError && (
-            <div className="mb-4 p-3 rounded-xl bg-red-900/30 border-l-8 border-red-500 text-red-400 flex items-center">
-              <span className="text-2xl mr-2">⚠️</span>
-              <span>{serverError}</span>
+            <div className="mb-6 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3">
+              <p className="text-red-200 mb-2">{serverError}</p>
+              <button
+                type="button"
+                onClick={() => handleSubmit({ preventDefault: () => {} })}
+                className="text-sm text-cyan-300 hover:text-cyan-200 underline"
+              >
+                Provo përsëri
+              </button>
             </div>
           )}
 
           {successMessage && (
-            <div className="mb-4 p-3 rounded-xl bg-green-900/30 border-l-8 border-green-500 text-green-400 flex items-center">
-              <span className="text-2xl mr-2">🎉</span>
-              <span>{successMessage}</span>
+            <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-emerald-200">
+              {successMessage}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <Input
-              label="👤 Full Name"
+              label="Emri i Plotë"
               type="text"
               name="name"
               value={formData.name}
@@ -102,11 +103,9 @@ const Signup = () => {
               error={errors.name}
               required
               autoComplete="name"
-              className="w-full px-4 py-2 rounded-xl border-2 border-white/50 bg-white/80 focus:bg-white focus:border-indigo-500 transition-all outline-none"
             />
-
             <Input
-              label="📧 Email Address"
+              label="Adresa Email"
               type="email"
               name="email"
               value={formData.email}
@@ -114,11 +113,9 @@ const Signup = () => {
               error={errors.email}
               required
               autoComplete="email"
-              className="w-full px-4 py-2 rounded-xl border-2 border-white/50 bg-white/80 focus:bg-white focus:border-indigo-500 transition-all outline-none"
             />
-
             <Input
-              label="🔒 Password"
+              label="Fjalëkalimi"
               type="password"
               name="password"
               value={formData.password}
@@ -126,11 +123,9 @@ const Signup = () => {
               error={errors.password}
               required
               autoComplete="new-password"
-              className="w-full px-4 py-2 rounded-xl border-2 border-white/50 bg-white/80 focus:bg-white focus:border-indigo-500 transition-all outline-none"
             />
-
             <Input
-              label="✅ Confirm Password"
+              label="Konfirmo Fjalëkalimin"
               type="password"
               name="confirmPassword"
               value={formData.confirmPassword}
@@ -138,33 +133,22 @@ const Signup = () => {
               error={errors.confirmPassword}
               required
               autoComplete="new-password"
-              className="w-full px-4 py-2 rounded-xl border-2 border-white/50 bg-white/80 focus:bg-white focus:border-indigo-500 transition-all outline-none"
             />
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-bold rounded-full shadow-md hover:shadow-xl transition-all transform hover:scale-105 flex items-center justify-center gap-2"
+              className="flex w-full items-center justify-center gap-3 rounded-full bg-gradient-to-r from-sky-500 to-cyan-500 px-6 py-3 text-base font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {loading ? (
-                <>
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Creating account...
-                </>
-              ) : (
-                <>🌟 Sign Up</>
-              )}
+              {loading ? 'Duke krijuar llogari...' : 'Krijo llogari'}
             </button>
           </form>
 
-          <div className="mt-6 text-center">
-            <p className="text-gray-400">
-              Already have an account?{' '}
-              <Link to="/login" className="font-bold text-indigo-400 hover:text-indigo-300 transition">
-                Sign in ✨
+          <div className="mt-8 text-center text-sm text-slate-400">
+            <p>
+              Keni një llogari tashmë?{' '}
+              <Link to="/login" className="font-medium text-cyan-300 transition hover:text-cyan-100">
+                Hyni këtu
               </Link>
             </p>
           </div>

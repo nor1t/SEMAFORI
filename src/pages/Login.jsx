@@ -13,14 +13,14 @@ const Login = () => {
   const validateForm = () => {
     const newErrors = {};
     if (!formData.email) {
-      newErrors.email = 'Email is required';
+      newErrors.email = 'Email-i është i nevojshëm';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
+      newErrors.email = 'Shkruaj një adresë email të vlefshme';
     }
     if (!formData.password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = 'Fjalëkalimi është i nevojshëm';
     } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+      newErrors.password = 'Fjalëkalimi duhet të jetë të paktën 6 karaktere';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -28,8 +28,8 @@ const Login = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
     if (serverError) setServerError('');
   };
 
@@ -45,31 +45,33 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-space">
-      <div className="max-w-md w-full animate-slide-up">
-        {/* Header kreativ */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-3xl shadow-xl mb-4 transform rotate-3 hover:rotate-0 transition">
-            <span className="text-4xl">🔐</span>
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-slate-950 text-slate-100">
+      <div className="w-full max-w-lg">
+        <div className="rounded-3xl border border-slate-800/80 bg-slate-900/85 shadow-2xl backdrop-blur-xl p-8 sm:p-10">
+          <div className="text-center mb-10">
+            <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-500 shadow-xl">
+              <span className="text-4xl">🚦</span>
+            </div>
+            <h1 className="text-4xl font-semibold tracking-tight text-white">Qendra e Komandës së Trafikut</h1>
+            <p className="mt-3 text-slate-400">Hyni për të menaxhuar raportet e incidenteve dhe monitoruar kushtet e rrugëve.</p>
           </div>
-          <h2 className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-            Welcome Back
-          </h2>
-          <p className="mt-2 text-gray-100">Sign in to access your creative space</p>
-        </div>
 
-        {/* Kartela e formës */}
-        <div className="bg-gray-800/40 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-gray-700/50 transition-all duration-300 hover:shadow-xl">
           {serverError && (
-            <div className="mb-4 p-3 rounded-xl bg-red-900/30 border-l-8 border-red-500 text-red-400 flex items-center">
-              <span className="text-2xl mr-2">⚠️</span>
-              <span>{serverError}</span>
+            <div className="mb-6 rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3">
+              <p className="text-red-200 mb-2">{serverError}</p>
+              <button
+                type="button"
+                onClick={() => handleSubmit({ preventDefault: () => {} })}
+                className="text-sm text-cyan-300 hover:text-cyan-200 underline"
+              >
+                Provo përsëri
+              </button>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <Input
-              label="📧 Email Address"
+              label="Adresa Email"
               type="email"
               name="email"
               value={formData.email}
@@ -78,9 +80,8 @@ const Login = () => {
               required
               autoComplete="email"
             />
-
             <Input
-              label="🔒 Password"
+              label="Fjalëkalimi"
               type="password"
               name="password"
               value={formData.password}
@@ -89,31 +90,30 @@ const Login = () => {
               required
               autoComplete="current-password"
             />
-
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-bold rounded-full shadow-md hover:shadow-xl transition-all transform hover:scale-105 flex items-center justify-center gap-2"
+              className="flex w-full items-center justify-center gap-3 rounded-full bg-gradient-to-r from-cyan-500 to-sky-500 px-6 py-3 text-base font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {loading ? (
                 <>
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  <svg className="h-5 w-5 animate-spin text-slate-950" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
                   Signing in...
                 </>
               ) : (
-                <>🚀 Sign In</>
+                'Hyni në Kontroll'
               )}
             </button>
           </form>
 
-          <div className="mt-6 text-center">
-            <p className="text-gray-100">
-              Don't have an account?{' '}
-              <Link to="/signup" className="font-bold text-indigo-200 hover:text-white transition">
-                Create one ✨
+          <div className="mt-8 text-center text-sm text-slate-400">
+            <p>
+              I ri për Komandën e Trafikut?{' '}
+              <Link to="/signup" className="font-medium text-cyan-300 transition hover:text-cyan-100">
+                Krijoni një llogari
               </Link>
             </p>
           </div>
