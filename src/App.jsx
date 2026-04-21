@@ -7,6 +7,12 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 
 function App() {
+  React.useEffect(() => {
+    // Apply dark mode by default
+    const html = document.documentElement;
+    html.classList.add('dark');
+  }, []);
+
   return (
     <Router>
       <AuthProvider>
@@ -18,9 +24,7 @@ function App() {
             path="/dashboard"
             element={
               <ProtectedRoute>
-                <div className="min-h-screen bg-slate-950">
-                  <Dashboard />
-                </div>
+                <Dashboard />
               </ProtectedRoute>
             }
           />

@@ -31,14 +31,12 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      console.log('Redirecting to login');
       navigate('/login');
     }
   }, [authLoading, user, navigate]);
 
-  // Early return for debugging
+  // Early return for loading state
   if (authLoading) {
-    console.log('Showing loading spinner');
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
@@ -47,18 +45,13 @@ const Dashboard = () => {
   }
 
   if (!user) {
-    console.log('No user, should redirect');
     return null;
   }
 
-  console.log('Rendering dashboard content');
-
   const fetchReports = useCallback(async () => {
     if (!user) {
-      console.log('No user available for fetchReports');
       return;
     }
-    console.log('Fetching reports for user:', user.id);
     try {
       const { data, error } = await supabase
         .from('user_data')
@@ -66,10 +59,8 @@ const Dashboard = () => {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       if (error) {
-        console.error('Supabase error:', error);
         throw error;
       }
-      console.log('Fetched reports:', data);
       setReports(data || []);
     } catch (err) {
       console.error('Error fetching reports:', err);
@@ -231,14 +222,8 @@ const Dashboard = () => {
 
   return (
     <div className="dark:text-slate-100 text-gray-900 dark:bg-slate-950 bg-white min-h-screen">
-      {/* <Header reports={reports} /> */}
+      <Header reports={reports} />
       <main className="mx-auto max-w-7xl px-4 py-8 pt-24 sm:px-6 lg:px-8">
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-lg shadow-lg">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Dashboard</h1>
-          <p className="text-gray-600 dark:text-gray-300">Welcome to the Traffic Control Command Center!</p>
-          <p className="text-gray-600 dark:text-gray-300 mt-2">User: {user?.email}</p>
-          <p className="text-gray-600 dark:text-gray-300 mt-2">Reports: {reports.length}</p>
-        </div>
         {message.text && (
           <div className={`mb-6 rounded-3xl border px-5 py-4 text-sm shadow-xl ${
             message.type === 'error'

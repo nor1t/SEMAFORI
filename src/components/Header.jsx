@@ -26,7 +26,7 @@ const Header = ({ reports = [] }) => {
     if (user) {
       loadProfile();
     }
-  }, [user, loadProfile]);
+  }, [user]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
