@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../services/supabaseClient';
 import Header from '../components/Header';
 
@@ -30,9 +30,9 @@ const Profile = () => {
       loadProfile();
       loadStats();
     }
-  }, [user]);
+  }, [user, loadProfile, loadStats]);
 
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     try {
       // Load profile data from user metadata or a profiles table
       const profile = {
@@ -46,9 +46,9 @@ const Profile = () => {
     } catch (err) {
       console.error('Error loading profile:', err);
     }
-  };
+  }, [user]);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('user_data')
@@ -65,7 +65,7 @@ const Profile = () => {
     } catch (err) {
       console.error('Error loading stats:', err);
     }
-  };
+  }, [user]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -86,6 +86,7 @@ const Profile = () => {
       setIsEditing(false);
       setTimeout(() => setMessage({ text: '', type: '' }), 3000);
     } catch (err) {
+      console.error('Error updating profile:', err);
       setMessage({ text: 'Failed to update profile.', type: 'error' });
     } finally {
       setSaving(false);

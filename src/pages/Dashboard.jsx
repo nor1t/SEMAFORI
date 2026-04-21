@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../services/supabaseClient';
 import Header from '../components/Header';
 
@@ -13,10 +13,9 @@ const statusOptions = [
 ];
 
 const Dashboard = () => {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [reports, setReports] = useState([]);
-  const [loadingData, setLoadingData] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -29,14 +28,13 @@ const Dashboard = () => {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!authLoading && !user) {
       navigate('/login');
     }
-  }, [loading, user, navigate]);
+  }, [authLoading, user, navigate]);
 
-  const fetchReports = async () => {
+  const fetchReports = useCallback(async () => {
     if (!user) return;
-    setLoadingData(true);
     try {
       const { data, error } = await supabase
         .from('user_data')
@@ -46,15 +44,14 @@ const Dashboard = () => {
       if (error) throw error;
       setReports(data || []);
     } catch (err) {
+      console.error('Error fetching reports:', err);
       setMessage({ text: 'Nuk mund të ngarkohen raportet nga Supabase.', type: 'error' });
-    } finally {
-      setLoadingData(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     if (user) fetchReports();
-  }, [user]);
+  }, [user, fetchReports]);
 
   const showMessage = (text, type = 'success') => {
     setMessage({ text, type });
@@ -111,6 +108,7 @@ const Dashboard = () => {
       await fetchReports();
       showMessage('Incidenti u shtua me sukses.');
     } catch (err) {
+      console.error('Error submitting report:', err);
       let message = 'Nuk mund të ruhet incidenti.';
 
       if (err.message.includes('timeout') || err.message.includes('skaduar')) {
@@ -158,6 +156,7 @@ const Dashboard = () => {
       await fetchReports();
       showMessage('Incidenti u përditësua me sukses.');
     } catch (err) {
+      console.error('Error updating report:', err);
       showMessage('Nuk mund të përditësohet incidenti në Supabase.', 'error');
     }
   };
@@ -174,6 +173,7 @@ const Dashboard = () => {
       await fetchReports();
       showMessage('Incidenti u hoq nga paneli yt.');
     } catch (err) {
+      console.error('Error deleting report:', err);
       showMessage('Nuk mund të hiqet incidenti nga Supabase.', 'error');
     }
   };

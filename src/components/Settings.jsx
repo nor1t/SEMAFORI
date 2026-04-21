@@ -1,30 +1,20 @@
 import React, { useState, useEffect } from 'react';
 
 const Settings = ({ onClose }) => {
-  const [theme, setTheme] = useState('dark');
-  const [language, setLanguage] = useState('albanian');
-  const [notifications, setNotifications] = useState(true);
-  const [autoSave, setAutoSave] = useState(true);
+  // Initialize state with values from localStorage
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [language, setLanguage] = useState(() => localStorage.getItem('language') || 'albanian');
+  const [notifications, setNotifications] = useState(() => localStorage.getItem('notifications') !== 'false');
+  const [autoSave, setAutoSave] = useState(() => localStorage.getItem('autoSave') !== 'false');
 
   useEffect(() => {
-    // Load settings from localStorage
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    const savedLanguage = localStorage.getItem('language') || 'albanian';
-    const savedNotifications = localStorage.getItem('notifications') !== 'false';
-    const savedAutoSave = localStorage.getItem('autoSave') !== 'false';
-
-    setTheme(savedTheme);
-    setLanguage(savedLanguage);
-    setNotifications(savedNotifications);
-    setAutoSave(savedAutoSave);
-
-    // Apply theme
-    if (savedTheme === 'dark') {
+    // Apply theme on mount and when theme changes
+    if (theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-  }, []);
+  }, [theme]);
 
   const handleThemeChange = (newTheme) => {
     setTheme(newTheme);

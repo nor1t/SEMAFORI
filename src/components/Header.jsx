@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import AIAssistant from './AIAssistant';
 import Settings from './Settings';
 
@@ -26,7 +26,7 @@ const Header = ({ reports = [] }) => {
     if (user) {
       loadProfile();
     }
-  }, [user]);
+  }, [user, loadProfile]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -39,7 +39,7 @@ const Header = ({ reports = [] }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     try {
       const profile = {
         full_name: user.user_metadata?.full_name || '',
@@ -52,7 +52,7 @@ const Header = ({ reports = [] }) => {
     } catch (err) {
       console.error('Error loading profile:', err);
     }
-  };
+  }, [user]);
 
   const handleSaveProfile = async () => {
     setSaving(true);
