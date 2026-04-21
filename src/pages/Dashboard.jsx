@@ -203,10 +203,8 @@ const Dashboard = () => {
 
   return (
     <div className="dark:text-slate-100 text-gray-900">
-      {/* <Header reports={reports} /> */}
+      <Header reports={reports} />
       <main className="mx-auto max-w-7xl px-4 py-8 pt-24 sm:px-6 lg:px-8">
-        <h1 className="text-4xl font-bold text-white">Dashboard Test</h1>
-        <p className="text-slate-300">If you can see this, the Dashboard is working!</p>
         {message.text && (
           <div className={`mb-6 rounded-3xl border px-5 py-4 text-sm shadow-xl ${
             message.type === 'error'
