@@ -1,34 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useLanguage } from '../context/LanguageContext';
+import { useTheme } from '../context/ThemeContext';
 
 const Settings = ({ onClose }) => {
-  // Initialize state with values from localStorage
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
-  const [language, setLanguage] = useState(() => localStorage.getItem('language') || 'albanian');
+  const { language, setLanguage, t } = useLanguage();
+  const { theme, setTheme } = useTheme();
   const [notifications, setNotifications] = useState(() => localStorage.getItem('notifications') !== 'false');
   const [autoSave, setAutoSave] = useState(() => localStorage.getItem('autoSave') !== 'false');
 
-  useEffect(() => {
-    // Apply theme on mount and when theme changes
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [theme]);
-
   const handleThemeChange = (newTheme) => {
     setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
-    if (newTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
   };
 
-  const handleLanguageChange = (newLanguage) => {
-    setLanguage(newLanguage);
-    localStorage.setItem('language', newLanguage);
+  const handleLanguageChange = (newLang) => {
+    setLanguage(newLang);
   };
 
   const handleNotificationsChange = (enabled) => {
@@ -43,16 +28,16 @@ const Settings = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 rounded-3xl border border-slate-700 w-full max-w-md shadow-2xl">
+      <div className="bg-slate-900 dark:bg-slate-900 rounded-3xl border border-slate-700 w-full max-w-md shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-700">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center">
               <span className="text-white text-lg">⚙️</span>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-white">Konfigurimet</h3>
-              <p className="text-sm text-slate-400">Personalizo përvojën tënde</p>
+              <h3 className="text-lg font-semibold text-white">{t('settings')}</h3>
+              <p className="text-sm text-slate-400">{t('personalizeExperience')}</p>
             </div>
           </div>
           <button
@@ -64,10 +49,10 @@ const Settings = ({ onClose }) => {
         </div>
 
         {/* Settings Content */}
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 max-h-96 overflow-y-auto">
           {/* Theme Setting */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-slate-200">Tema</h4>
+            <h4 className="text-sm font-semibold text-slate-200 uppercase tracking-wide">{t('theme')}</h4>
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => handleThemeChange('light')}
@@ -82,8 +67,8 @@ const Settings = ({ onClose }) => {
                     <span className="text-lg">☀️</span>
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-medium text-white">Drita</p>
-                    <p className="text-xs text-slate-400">Ndriçim i lehtë</p>
+                    <p className="text-sm font-medium text-white">{t('light')}</p>
+                    <p className="text-xs text-slate-400">{t('lightTheme')}</p>
                   </div>
                 </div>
               </button>
@@ -100,8 +85,8 @@ const Settings = ({ onClose }) => {
                     <span className="text-lg">🌙</span>
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-medium text-white">Errësirë</p>
-                    <p className="text-xs text-slate-400">Ndriçim i errët</p>
+                    <p className="text-sm font-medium text-white">{t('dark')}</p>
+                    <p className="text-xs text-slate-400">{t('darkTheme')}</p>
                   </div>
                 </div>
               </button>
@@ -110,52 +95,82 @@ const Settings = ({ onClose }) => {
 
           {/* Language Setting */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-slate-200">Gjuha</h4>
-            <select
-              value={language}
-              onChange={(e) => handleLanguageChange(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition"
-            >
-              <option value="albanian">🇦🇱 Shqip</option>
-              <option value="english">🇺🇸 English</option>
-            </select>
+            <h4 className="text-sm font-semibold text-slate-200 uppercase tracking-wide">{t('language')}</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => handleLanguageChange('albanian')}
+                className={`p-4 rounded-2xl border-2 transition ${
+                  language === 'albanian'
+                    ? 'border-cyan-400 bg-cyan-500/10'
+                    : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center text-white font-bold text-xs">
+                    SQ
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-white">{t('albanian')}</p>
+                    <p className="text-xs text-slate-400">Shqiptare</p>
+                  </div>
+                </div>
+              </button>
+              <button
+                onClick={() => handleLanguageChange('english')}
+                className={`p-4 rounded-2xl border-2 transition ${
+                  language === 'english'
+                    ? 'border-cyan-400 bg-cyan-500/10'
+                    : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs">
+                    EN
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-white">{t('english')}</p>
+                    <p className="text-xs text-slate-400">English</p>
+                  </div>
+                </div>
+              </button>
+            </div>
           </div>
 
-          {/* Notifications Setting */}
-          <div className="flex items-center justify-between">
+          {/* Notifications Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
             <div>
-              <h4 className="text-sm font-medium text-slate-200">Njoftimet</h4>
-              <p className="text-xs text-slate-400">Merr njoftime për incidente të reja</p>
+              <p className="text-sm font-medium text-white">{t('notifications')}</p>
+              <p className="text-xs text-slate-400">Get alerts for new incidents</p>
             </div>
             <button
               onClick={() => handleNotificationsChange(!notifications)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+              className={`w-12 h-6 rounded-full transition ${
                 notifications ? 'bg-cyan-500' : 'bg-slate-600'
               }`}
             >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                  notifications ? 'translate-x-6' : 'translate-x-1'
+              <div
+                className={`w-5 h-5 bg-white rounded-full transition transform ${
+                  notifications ? 'translate-x-6' : 'translate-x-0.5'
                 }`}
               />
             </button>
           </div>
 
-          {/* Auto Save Setting */}
-          <div className="flex items-center justify-between">
+          {/* Auto-Save Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
             <div>
-              <h4 className="text-sm font-medium text-slate-200">Ruajtje Automatike</h4>
-              <p className="text-xs text-slate-400">Ruaj automatikisht ndryshimet</p>
+              <p className="text-sm font-medium text-white">{t('autoSave')}</p>
+              <p className="text-xs text-slate-400">Automatically save reports</p>
             </div>
             <button
               onClick={() => handleAutoSaveChange(!autoSave)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+              className={`w-12 h-6 rounded-full transition ${
                 autoSave ? 'bg-cyan-500' : 'bg-slate-600'
               }`}
             >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                  autoSave ? 'translate-x-6' : 'translate-x-1'
+              <div
+                className={`w-5 h-5 bg-white rounded-full transition transform ${
+                  autoSave ? 'translate-x-6' : 'translate-x-0.5'
                 }`}
               />
             </button>
@@ -166,9 +181,19 @@ const Settings = ({ onClose }) => {
             <div className="text-center">
               <h3 className="text-lg font-semibold text-white">SEMAFORI</h3>
               <p className="text-sm text-slate-400">Version 1.0.0</p>
-              <p className="text-xs text-slate-500 mt-2">Sistemi i Menaxhimit të Trafikut</p>
+              <p className="text-xs text-slate-500 mt-2">Traffic Management System</p>
             </div>
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-slate-700">
+          <button
+            onClick={onClose}
+            className="w-full py-2 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold transition"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>

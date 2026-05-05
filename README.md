@@ -247,6 +247,29 @@ Dashboard Available
 
 ---
 
+## 🎤 Demo & Presentation
+
+For the final presentation, please refer to **[`docs/demo-plan.md`](./docs/demo-plan.md)** which includes:
+
+- ✅ **5-7 minute demo script** with clear talking points
+- ✅ **Main demo flow:** Authentication → Dashboard → Create Incident → AI Analysis → Settings
+- ✅ **Technical highlights** to explain during presentation
+- ✅ **Pre-demo verification checklist** to ensure everything works
+- ✅ **Plan B strategies** if live demo fails
+- ✅ **Ready-made answers** to common technical questions
+
+### Quick Demo Access
+
+**Live URL:** https://semaf.vercel.app
+
+**Demo Account:**
+- **Email:** `demo@traffic.gov`
+- **Password:** `Demo@123456`
+
+**Expected Demo Duration:** 5-7 minutes with Q&A
+
+---
+
 ## 🚀 Deployment
 
 ### Deploy to Vercel (Recommended)

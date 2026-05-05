@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../services/supabaseClient';
+import { useLanguage } from '../context/LanguageContext';
 import Header from '../components/Header';
+import TrafficMap from '../components/TrafficMap';
 
 const incidentTypes = ['Aksident', 'Konstruksion', 'Trafik i Rëndë', 'Moti'];
 const severityOptions = ['Minore', 'Moderate', 'Madhore'];
@@ -20,7 +22,7 @@ const Dashboard = () => {
     title: '',
     description: '',
     type: incidentTypes[0],
-    severity: severityOptions[1],
+    severity: severityOptions[0],
     status: 'active',
   });
   const [editingId, setEditingId] = useState(null);
@@ -53,14 +55,18 @@ const Dashboard = () => {
       return;
     }
     try {
+      console.log('Fetching reports...');
       const { data, error } = await supabase
-        .from('user_data')
+        .from('raportet')
         .select('*')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
+      
       if (error) {
+        console.error('Supabase fetch error:', error);
         throw error;
       }
+      
+      console.log('Reports fetched:', data);
       setReports(data || []);
     } catch (err) {
       console.error('Error fetching reports:', err);
@@ -83,7 +89,7 @@ const Dashboard = () => {
       title: '',
       description: '',
       type: incidentTypes[0],
-      severity: severityOptions[1],
+      severity: severityOptions[0],
       status: 'active',
     });
   };
@@ -105,27 +111,29 @@ const Dashboard = () => {
 
     try {
       const payload = {
-        user_id: user.id,
-        title: formData.title.trim(),
-        description: formData.description.trim(),
-        type: formData.type,
-        severity: formData.severity,
-        status: formData.status,
+        'Titulli i incidentit': formData.title.trim(),
+        'Përshkrimi': formData.description.trim(),
+        'Kategoria': formData.type,
+        'Rëndësia': formData.severity,
+        'Statusi': formData.status,
       };
 
-      // Add timeout
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Kërkesa ka skaduar. Provoni përsëri.')), 15000);
-      });
+      console.log('Sending payload to Supabase:', payload);
 
-      const submitPromise = supabase.from('user_data').insert([payload]);
+      const { data, error } = await supabase
+        .from('raportet')
+        .insert([payload])
+        .select();
 
-      const { error } = await Promise.race([submitPromise, timeoutPromise]);
-
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase insert error:', error);
+        throw error;
+      }
+      
+      console.log('Report successfully saved:', data);
       resetForm();
       await fetchReports();
-      showMessage('Incidenti u shtua me sukses.');
+      showMessage('Raporti juaj u regjistrua me sukses! ✓');
     } catch (err) {
       console.error('Error submitting report:', err);
       let message = 'Nuk mund të ruhet incidenti.';
@@ -158,18 +166,20 @@ const Dashboard = () => {
 
     try {
       const payload = {
-        title: formData.title.trim(),
-        description: formData.description.trim(),
-        type: formData.type,
-        severity: formData.severity,
-        status: formData.status,
+        'Titulli i incidentit': formData.title.trim(),
+        'Përshkrimi': formData.description.trim(),
+        'Kategoria': formData.type,
+        'Rëndësia': formData.severity,
+        'Statusi': formData.status,
       };
+      
       const { error } = await supabase
-        .from('user_data')
+        .from('raportet')
         .update(payload)
-        .eq('id', id)
-        .eq('user_id', user.id);
+        .eq('id', id);
+
       if (error) throw error;
+
       resetForm();
       setEditingId(null);
       await fetchReports();
@@ -184,11 +194,12 @@ const Dashboard = () => {
     if (!window.confirm('Fshi këtë raport incidenti?')) return;
     try {
       const { error } = await supabase
-        .from('user_data')
+        .from('raportet')
         .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
+        .eq('id', id);
+
       if (error) throw error;
+
       await fetchReports();
       showMessage('Incidenti u hoq nga paneli yt.');
     } catch (err) {
@@ -200,18 +211,18 @@ const Dashboard = () => {
   const startEditing = (report) => {
     setEditingId(report.id);
     setFormData({
-      title: report.title,
-      description: report.description,
-      type: report.type,
-      severity: report.severity,
-      status: report.status,
+      title: report['Titulli i incidentit'],
+      description: report['Përshkrimi'],
+      type: report['Kategoria'],
+      severity: report['Rëndësia'],
+      status: report['Statusi'],
     });
   };
 
   const stats = useMemo(() => {
-    const active = reports.filter((item) => item.status === 'active').length;
-    const control = reports.filter((item) => item.status === 'under_control').length;
-    const cleared = reports.filter((item) => item.status === 'cleared').length;
+    const active = reports.filter((item) => item['Statusi'] === 'active').length;
+    const control = reports.filter((item) => item['Statusi'] === 'under_control').length;
+    const cleared = reports.filter((item) => item['Statusi'] === 'cleared').length;
     return { total: reports.length, active, control, cleared };
   }, [reports]);
 
@@ -283,17 +294,8 @@ const Dashboard = () => {
 
           <aside className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
             <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Harta e trafikut live</p>
-            <div className="mt-5 h-72 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 p-5 shadow-inner">
-              <div className="relative h-full overflow-hidden rounded-3xl border border-slate-700/70 bg-slate-950">
-                <div className="absolute left-4 top-4 h-3 w-3 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.6)]" />
-                <div className="absolute right-6 top-10 h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]" />
-                <div className="absolute left-10 bottom-12 h-3 w-3 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.6)]" />
-                <div className="absolute inset-x-5 top-32 h-1 rounded-full bg-slate-700" />
-                <div className="absolute inset-x-20 top-44 h-1 rounded-full bg-slate-700" />
-                <div className="absolute inset-x-10 top-56 h-1 rounded-full bg-slate-700" />
-                <div className="absolute left-16 top-20 h-9 w-9 rounded-full border border-slate-600 bg-slate-900" />
-                <div className="absolute right-16 top-52 h-9 w-9 rounded-full border border-slate-600 bg-slate-900" />
-              </div>
+            <div className="mt-5">
+              <TrafficMap reports={reports} />
             </div>
           </aside>
         </section>
@@ -432,15 +434,15 @@ const Dashboard = () => {
                   <div key={report.id} className="rounded-3xl border border-slate-800/80 bg-slate-950/80 p-5 shadow-inner">
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <p className="text-sm text-slate-400 uppercase tracking-[0.2em]">{report.type}</p>
-                        <h3 className="mt-2 text-xl font-semibold text-white">{report.title}</h3>
-                        <p className="mt-2 text-slate-400">{report.description || 'Nuk janë dhënë detaje shtesë.'}</p>
+                        <p className="text-sm text-slate-400 uppercase tracking-[0.2em]">{report['Kategoria']}</p>
+                        <h3 className="mt-2 text-xl font-semibold text-white">{report['Titulli i incidentit']}</h3>
+                        <p className="mt-2 text-slate-400">{report['Përshkrimi'] || 'Nuk janë dhënë detaje shtesë.'}</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(report.status)}`}>
-                          {statusOptions.find((option) => option.value === report.status)?.label}
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(report['Statusi'])}`}>
+                          {statusOptions.find((option) => option.value === report['Statusi'])?.label}
                         </span>
-                        <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs text-slate-300">{report.severity}</span>
+                        <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs text-slate-300">{report['Rëndësia']}</span>
                         <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs text-slate-300">{new Date(report.created_at).toLocaleDateString()}</span>
                       </div>
                     </div>

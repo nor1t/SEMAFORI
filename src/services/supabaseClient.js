@@ -15,3 +15,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: localStorage,
   },
 });
+
+// Helper functions for Raportet table
+export const saveToRaportet = async (reportData) => {
+  return supabase.from('Raportet').insert([reportData]);
+};
+
+export const updateRaportet = async (id, reportData) => {
+  return supabase.from('Raportet').update(reportData).eq('id', id);
+};
+
+export const deleteRaportet = async (id) => {
+  return supabase.from('Raportet').delete().eq('id', id);
+};
