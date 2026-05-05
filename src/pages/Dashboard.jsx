@@ -41,6 +41,9 @@ const Dashboard = () => {
   });
 
   const locale = language === 'english' ? 'en-US' : 'sq-AL';
+  const ownershipLockedMessage = language === 'english'
+    ? 'You can only edit or delete incidents created by your account.'
+    : 'Mund të modifikoni ose fshini vetëm incidentet e krijuara nga llogaria juaj.';
   const cardClass = theme === 'light'
     ? 'border border-slate-200 bg-white/85'
     : 'border border-slate-800/80 bg-slate-900/80';
@@ -183,6 +186,10 @@ const Dashboard = () => {
   const handleDelete = async (report) => {
     if (!window.confirm(t('confirm'))) return;
     if (!user) return;
+    if (!canManageReport(report)) {
+      showMessage(ownershipLockedMessage, 'error');
+      return;
+    }
 
     try {
       await removeIncidentReport(user.id, report.id, report.sourceTable);
@@ -195,6 +202,11 @@ const Dashboard = () => {
   };
 
   const startEditing = (report) => {
+    if (!canManageReport(report)) {
+      showMessage(ownershipLockedMessage, 'error');
+      return;
+    }
+
     setEditingReport(report);
     setFormData({
       title: report.title,
@@ -213,6 +225,10 @@ const Dashboard = () => {
   const formatSeverityLabel = (severityKey) => t(severityKey);
   const formatStatusLabel = (status) => t(STATUS_OPTIONS.find((option) => option.value === status)?.labelKey || 'active');
   const statusBadgeClass = (status) => STATUS_OPTIONS.find((option) => option.value === status)?.badge || 'bg-slate-500/15 text-slate-700 dark:text-slate-300';
+  const canManageReport = useCallback(
+    (report) => !report?.userId || report.userId === user?.id,
+    [user]
+  );
 
   if (authLoading) {
     return (
@@ -473,18 +489,26 @@ const Dashboard = () => {
                     </div>
 
                     <div className="mt-4 flex flex-wrap gap-3">
-                      <button
-                        onClick={() => startEditing(report)}
-                        className={`rounded-full px-4 py-2 text-sm transition ${theme === 'light' ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
-                      >
-                        {t('edit')}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(report)}
-                        className="rounded-full bg-rose-500/15 px-4 py-2 text-sm text-rose-300 transition hover:bg-rose-500/25 dark:text-rose-300"
-                      >
-                        {t('delete')}
-                      </button>
+                      {canManageReport(report) ? (
+                        <>
+                          <button
+                            onClick={() => startEditing(report)}
+                            className={`rounded-full px-4 py-2 text-sm transition ${theme === 'light' ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
+                          >
+                            {t('edit')}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(report)}
+                            className="rounded-full bg-rose-500/15 px-4 py-2 text-sm text-rose-300 transition hover:bg-rose-500/25 dark:text-rose-300"
+                          >
+                            {t('delete')}
+                          </button>
+                        </>
+                      ) : (
+                        <span className={`rounded-full px-4 py-2 text-sm ${theme === 'light' ? 'bg-slate-200 text-slate-600' : 'bg-slate-800 text-slate-300'}`}>
+                          {language === 'english' ? 'View only' : 'Vetëm për shikim'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))

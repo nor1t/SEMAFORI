@@ -58,6 +58,18 @@ const isMissingTableOrColumn = (error) => {
   );
 };
 
+const isPermissionError = (error) => {
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  return (
+    error?.code === '42501' ||
+    error?.status === 401 ||
+    error?.status === 403 ||
+    message.includes('permission denied') ||
+    message.includes('row-level security') ||
+    message.includes('not allowed')
+  );
+};
+
 const normalizeKey = (value) => `${value || ''}`.trim().toLowerCase();
 const normalizeStatus = (value) => STATUS_ALIASES[normalizeKey(value)] || 'active';
 const normalizeType = (value) => TYPE_ALIASES[normalizeKey(value)] || 'accident';
@@ -80,6 +92,7 @@ const mapStandardRow = (row, table) => ({
     lng: parseCoordinate(row.longitude ?? row.Longitude ?? row.lng),
   },
   createdAt: row.created_at || row.updated_at || new Date().toISOString(),
+  userId: row.user_id || null,
   sourceTable: table.name,
   sourceSchema: table.schema,
 });
@@ -96,6 +109,7 @@ const mapLegacyRow = (row, table) => ({
     lng: parseCoordinate(row.Longitude ?? row.longitude ?? row.lng),
   },
   createdAt: row.created_at || row.updated_at || new Date().toISOString(),
+  userId: row.user_id || null,
   sourceTable: table.name,
   sourceSchema: table.schema,
 });
@@ -152,24 +166,19 @@ const buildLegacyPayloads = (report, userId) => {
 };
 
 const buildFetchCandidates = (table, userId) => (
-  table.schema === 'standard'
-    ? [
-        () => supabase.from(table.name).select('*').eq('user_id', userId).order('created_at', { ascending: false }),
-        () => supabase.from(table.name).select('*').eq('user_id', userId),
-      ]
-    : [
-        () => supabase.from(table.name).select('*').eq('user_id', userId).order('created_at', { ascending: false }),
-        () => supabase.from(table.name).select('*').eq('user_id', userId),
-        () => supabase.from(table.name).select('*').order('created_at', { ascending: false }),
-        () => supabase.from(table.name).select('*'),
-      ]
+  [
+    () => supabase.from(table.name).select('*').order('created_at', { ascending: false }),
+    () => supabase.from(table.name).select('*'),
+    () => supabase.from(table.name).select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+    () => supabase.from(table.name).select('*').eq('user_id', userId),
+  ]
 );
 
 const buildMutationPayloads = (table, report, userId) => (
   table.schema === 'standard' ? buildStandardPayloads(report, userId) : buildLegacyPayloads(report, userId)
 );
 
-const executeQueryCandidates = async (builders) => {
+const executeQueryCandidates = async (builders, canFallback = isMissingTableOrColumn) => {
   let lastError = null;
 
   for (const buildQuery of builders) {
@@ -179,7 +188,7 @@ const executeQueryCandidates = async (builders) => {
     }
 
     lastError = result.error;
-    if (!isMissingTableOrColumn(result.error)) {
+    if (!canFallback(result.error)) {
       throw result.error;
     }
   }
@@ -222,8 +231,14 @@ const buildOptimisticResult = (table, report, reportId = null) => ({
 
 export const fetchIncidentReports = async (userId) =>
   tryWithTables(async (table) => {
-    const { data } = await executeQueryCandidates(buildFetchCandidates(table, userId));
-    return (data || []).map((row) => mapRow(row, table));
+    const { data } = await executeQueryCandidates(
+      buildFetchCandidates(table, userId),
+      (error) => isMissingTableOrColumn(error) || isPermissionError(error)
+    );
+
+    return (data || [])
+      .map((row) => mapRow(row, table))
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   });
 
 export const createIncidentReport = async (userId, report) =>
