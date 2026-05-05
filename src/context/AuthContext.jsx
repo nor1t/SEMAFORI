@@ -1,7 +1,13 @@
 import React, { createContext, useEffect, useState } from 'react';
+import { translations } from './LanguageContext';
 import { supabase } from '../services/supabaseClient';
 
 const AuthContext = createContext({});
+
+const getLanguage = () => localStorage.getItem('language') || 'albanian';
+const translate = (key) => translations[getLanguage()]?.[key] || translations.albanian?.[key] || key;
+const isTimeoutError = (message) => message.includes('timeout') || message.includes('skaduar');
+const isNetworkError = (message) => message.includes('network') || message.includes('fetch');
 
 export default AuthContext;
 
@@ -13,12 +19,16 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError) throw sessionError;
         setUser(session?.user ?? null);
-      } catch (err) {
-        console.error('Supabase auth initialization error:', err);
-        setError(err.message);
+      } catch (authError) {
+        console.error('Supabase auth initialization error:', authError);
+        setError(authError.message);
       } finally {
         setLoading(false);
       }
@@ -26,7 +36,9 @@ export const AuthProvider = ({ children }) => {
 
     initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
     });
@@ -36,118 +48,102 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  const signUp = async (email, password, fullName, retryCount = 0) => {
+  const withTimeout = (promise, timeoutMs = 10000) =>
+    Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        window.setTimeout(() => reject(new Error(translate('timeout'))), timeoutMs);
+      }),
+    ]);
+
+  const signUp = async (email, password, fullName) => {
     setLoading(true);
     setError(null);
 
-    // Check if offline
     if (!navigator.onLine) {
-      const message = 'Jeni offline. Kontrolloni lidhjen tuaj të internetit dhe provoni përsëri.';
+      const message = translate('offline');
       setError(message);
       setLoading(false);
       return { data: null, error: { message } };
     }
 
     try {
-      // Add timeout to the request
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Kërkesa ka skaduar. Provoni përsëri.')), 10000);
-      });
-
-      const signUpPromise = supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
+      const { data, error: signUpError } = await withTimeout(
+        supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: fullName,
+            },
           },
-        },
-      });
+        })
+      );
 
-      const { data, error } = await Promise.race([signUpPromise, timeoutPromise]);
-
-      if (error) throw error;
+      if (signUpError) throw signUpError;
       return { data, error: null };
-    } catch (err) {
-      let message = err?.message || 'Regjistrimi dështoi. Provoni përsëri.';
+    } catch (authError) {
+      const rawMessage = `${authError?.message || ''}`.toLowerCase();
+      let message = authError?.message || translate('tryAgain');
 
-      // Handle specific error types
-      if (err.message.includes('timeout') || err.message.includes('skaduar')) {
-        message = 'Kërkesa ka skaduar. Provoni përsëri.';
-      } else if (err.message.includes('network') || err.message.includes('fetch')) {
-        message = 'Problem me lidhjen. Kontrolloni internetin dhe provoni përsëri.';
-      } else if (err.message.includes('User already registered')) {
-        message = 'Ky email është tashmë i regjistruar. Provoni të hyni.';
-      } else if (err.message.includes('Password should be at least')) {
-        message = 'Fjalëkalimi duhet të jetë më i fortë.';
+      if (isTimeoutError(rawMessage)) {
+        message = translate('timeout');
+      } else if (isNetworkError(rawMessage)) {
+        message = translate('networkError');
+      } else if (rawMessage.includes('user already registered')) {
+        message = getLanguage() === 'english'
+          ? 'This email is already registered. Try signing in.'
+          : 'Ky email është tashmë i regjistruar. Provoni të hyni.';
+      } else if (rawMessage.includes('password should be at least')) {
+        message = getLanguage() === 'english'
+          ? 'Password needs to be stronger.'
+          : 'Fjalëkalimi duhet të jetë më i fortë.';
       }
 
       setError(message);
-
-      // Auto-retry for network errors, up to 2 retries
-      if ((err.message.includes('network') || err.message.includes('timeout') || err.message.includes('fetch')) && retryCount < 2) {
-        console.log(`Retrying sign up... Attempt ${retryCount + 1}`);
-        setTimeout(() => signUp(email, password, fullName, retryCount + 1), 2000);
-        return { data: null, error: { message: `${message} (Duke provuar përsëri...)` } };
-      }
-
-      setLoading(false);
       return { data: null, error: { message } };
     } finally {
       setLoading(false);
     }
   };
 
-  const signIn = async (email, password, retryCount = 0) => {
+  const signIn = async (email, password) => {
     setLoading(true);
     setError(null);
 
-    // Check if offline
     if (!navigator.onLine) {
-      const message = 'Jeni offline. Kontrolloni lidhjen tuaj të internetit dhe provoni përsëri.';
+      const message = translate('offline');
       setError(message);
       setLoading(false);
       return { data: null, error: { message } };
     }
 
     try {
-      // Add timeout to the request
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Kërkesa ka skaduar. Provoni përsëri.')), 10000); // 10 second timeout
-      });
+      const { data, error: signInError } = await withTimeout(
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+      );
 
-      const signInPromise = supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      const { data, error } = await Promise.race([signInPromise, timeoutPromise]);
-
-      if (error) throw error;
+      if (signInError) throw signInError;
       setUser(data?.user ?? null);
       return { data, error: null };
-    } catch (err) {
-      let message = err?.message || 'Hyrja dështoi. Kontrolloni kredencialet tuaja.';
+    } catch (authError) {
+      const rawMessage = `${authError?.message || ''}`.toLowerCase();
+      let message = authError?.message || translate('tryAgain');
 
-      // Handle specific error types
-      if (err.message.includes('timeout') || err.message.includes('skaduar')) {
-        message = 'Kërkesa ka skaduar. Provoni përsëri.';
-      } else if (err.message.includes('network') || err.message.includes('fetch')) {
-        message = 'Problem me lidhjen. Kontrolloni internetin dhe provoni përsëri.';
-      } else if (err.message.includes('Invalid login credentials')) {
-        message = 'Kredencialet e pavlefshme. Kontrolloni email-in dhe fjalëkalimin.';
+      if (isTimeoutError(rawMessage)) {
+        message = translate('timeout');
+      } else if (isNetworkError(rawMessage)) {
+        message = translate('networkError');
+      } else if (rawMessage.includes('invalid login credentials')) {
+        message = getLanguage() === 'english'
+          ? 'Invalid credentials. Check your email and password.'
+          : 'Kredencialet janë të pavlefshme. Kontrolloni email-in dhe fjalëkalimin.';
       }
 
       setError(message);
-
-      // Auto-retry for network errors, up to 2 retries
-      if ((err.message.includes('network') || err.message.includes('timeout') || err.message.includes('fetch')) && retryCount < 2) {
-        console.log(`Retrying sign in... Attempt ${retryCount + 1}`);
-        setTimeout(() => signIn(email, password, retryCount + 1), 2000); // Retry after 2 seconds
-        return { data: null, error: { message: `${message} (Duke provuar përsëri...)` } };
-      }
-
-      setLoading(false);
       return { data: null, error: { message } };
     } finally {
       setLoading(false);
@@ -159,12 +155,12 @@ export const AuthProvider = ({ children }) => {
     setError(null);
 
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) throw signOutError;
       setUser(null);
       return { error: null };
-    } catch (err) {
-      const message = err?.message || 'Logout failed.';
+    } catch (authError) {
+      const message = authError?.message || 'Logout failed.';
       setError(message);
       return { error: { message } };
     } finally {
@@ -172,15 +168,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const value = {
-    user,
-    loading,
-    error,
-    signUp,
-    signIn,
-    signOut,
-    isAuthenticated: !!user,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        error,
+        signUp,
+        signIn,
+        signOut,
+        isAuthenticated: !!user,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 };

@@ -1,47 +1,223 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
-import { supabase } from '../services/supabaseClient';
-import { useLanguage } from '../context/LanguageContext';
 import Header from '../components/Header';
 import TrafficMap from '../components/TrafficMap';
+import { useLanguage } from '../context/LanguageContext';
+import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../hooks/useAuth';
+import {
+  createIncidentReport,
+  fetchIncidentReports,
+  removeIncidentReport,
+  updateIncidentReport,
+} from '../services/reportService';
 
-const incidentTypes = ['Aksident', 'Konstruksion', 'Trafik i Rëndë', 'Moti'];
-const severityOptions = ['Minore', 'Moderate', 'Madhore'];
-const statusOptions = [
-  { value: 'active', label: 'Aktiv', badge: 'bg-emerald-500/15 text-emerald-300' },
-  { value: 'under_control', label: 'Nën Kontroll', badge: 'bg-amber-500/15 text-amber-300' },
-  { value: 'cleared', label: 'Pastruar', badge: 'bg-sky-500/15 text-sky-300' },
+const INCIDENT_TYPE_KEYS = ['accident', 'construction', 'heavyTrafficType', 'weather'];
+const SEVERITY_KEYS = ['minor', 'moderate', 'major'];
+const STATUS_OPTIONS = [
+  { value: 'active', labelKey: 'active', badge: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
+  { value: 'under_control', labelKey: 'underControl', badge: 'bg-amber-500/15 text-amber-700 dark:text-amber-300' },
+  { value: 'cleared', labelKey: 'cleared', badge: 'bg-sky-500/15 text-sky-700 dark:text-sky-300' },
 ];
 
 const Dashboard = () => {
   const { user, loading: authLoading } = useAuth();
+  const { language, t } = useLanguage();
+  const { theme } = useTheme();
   const navigate = useNavigate();
+  const formSectionRef = useRef(null);
+
   const [reports, setReports] = useState([]);
+  const [editingReport, setEditingReport] = useState(null);
+  const [message, setMessage] = useState({ text: '', type: '' });
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    type: incidentTypes[0],
-    severity: severityOptions[0],
+    type: INCIDENT_TYPE_KEYS[0],
+    severity: SEVERITY_KEYS[0],
     status: 'active',
+    location: { lat: null, lng: null },
   });
-  const [editingId, setEditingId] = useState(null);
-  const [message, setMessage] = useState({ text: '', type: '' });
-  const [submitting, setSubmitting] = useState(false);
 
-  console.log('Dashboard render:', { user, authLoading });
+  const locale = language === 'english' ? 'en-US' : 'sq-AL';
+  const cardClass = theme === 'light'
+    ? 'border border-slate-200 bg-white/85'
+    : 'border border-slate-800/80 bg-slate-900/80';
+  const innerCardClass = theme === 'light'
+    ? 'bg-slate-100/90 text-slate-900'
+    : 'bg-slate-950/80 text-white';
+
+  const showMessage = useCallback((text, type = 'success') => {
+    setMessage({ text, type });
+    window.setTimeout(() => setMessage({ text: '', type: '' }), 3200);
+  }, []);
+
+  const resetForm = useCallback(() => {
+    setEditingReport(null);
+    setFormData({
+      title: '',
+      description: '',
+      type: INCIDENT_TYPE_KEYS[0],
+      severity: SEVERITY_KEYS[0],
+      status: 'active',
+      location: { lat: null, lng: null },
+    });
+  }, []);
+
+  const fetchReports = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      const data = await fetchIncidentReports(user.id);
+      setReports(data || []);
+    } catch (error) {
+      console.error('Error fetching reports:', error);
+      showMessage(t('errorFetch'), 'error');
+    }
+  }, [showMessage, t, user]);
 
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/login');
     }
-  }, [authLoading, user, navigate]);
+  }, [authLoading, navigate, user]);
 
-  // Early return for loading state
+  useEffect(() => {
+    if (user) {
+      fetchReports();
+    }
+  }, [fetchReports, user]);
+
+  useEffect(() => {
+    if (editingReport && formSectionRef.current) {
+      formSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [editingReport]);
+
+  const stats = useMemo(() => {
+    const active = reports.filter((item) => item.status === 'active').length;
+    const control = reports.filter((item) => item.status === 'under_control').length;
+    const cleared = reports.filter((item) => item.status === 'cleared').length;
+    return { total: reports.length, active, control, cleared };
+  }, [reports]);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!formData.title.trim()) {
+      showMessage(t('titleRequired'), 'error');
+      return;
+    }
+
+    if (!navigator.onLine) {
+      showMessage(t('offline'), 'error');
+      return;
+    }
+
+    if (!user) return;
+
+    setSubmitting(true);
+
+    try {
+      await createIncidentReport(user.id, {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        type: formData.type,
+        severity: formData.severity,
+        status: formData.status,
+        location: formData.location,
+      });
+
+      resetForm();
+      await fetchReports();
+      showMessage(t('successMessage'));
+    } catch (error) {
+      console.error('Error submitting report:', error);
+      showMessage(t('errorSave'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdate = async (event) => {
+    event.preventDefault();
+
+    if (!editingReport) return;
+
+    if (!formData.title.trim()) {
+      showMessage(t('titleRequired'), 'error');
+      return;
+    }
+
+    if (!user) return;
+
+    setSubmitting(true);
+
+    try {
+      await updateIncidentReport(
+        user.id,
+        editingReport.id,
+        {
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          type: formData.type,
+          severity: formData.severity,
+          status: formData.status,
+          location: formData.location,
+        },
+        editingReport.sourceTable
+      );
+
+      resetForm();
+      await fetchReports();
+      showMessage(t('updateSuccess'));
+    } catch (error) {
+      console.error('Error updating report:', error);
+      showMessage(t('errorUpdate'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (report) => {
+    if (!window.confirm(t('confirm'))) return;
+    if (!user) return;
+
+    try {
+      await removeIncidentReport(user.id, report.id, report.sourceTable);
+      await fetchReports();
+      showMessage(t('deleteSuccess'));
+    } catch (error) {
+      console.error('Error deleting report:', error);
+      showMessage(t('errorDelete'), 'error');
+    }
+  };
+
+  const startEditing = (report) => {
+    setEditingReport(report);
+    setFormData({
+      title: report.title,
+      description: report.description || '',
+      type: report.type || INCIDENT_TYPE_KEYS[0],
+      severity: report.severity || SEVERITY_KEYS[0],
+      status: report.status || 'active',
+      location: {
+        lat: report.location?.lat ?? null,
+        lng: report.location?.lng ?? null,
+      },
+    });
+  };
+
+  const formatTypeLabel = (typeKey) => t(typeKey);
+  const formatSeverityLabel = (severityKey) => t(severityKey);
+  const formatStatusLabel = (status) => t(STATUS_OPTIONS.find((option) => option.value === status)?.labelKey || 'active');
+  const statusBadgeClass = (status) => STATUS_OPTIONS.find((option) => option.value === status)?.badge || 'bg-slate-500/15 text-slate-700 dark:text-slate-300';
+
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+      <div className={`flex min-h-screen items-center justify-center ${theme === 'light' ? 'bg-slate-100' : 'bg-slate-950'}`}>
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-cyan-500" />
       </div>
     );
   }
@@ -50,197 +226,22 @@ const Dashboard = () => {
     return null;
   }
 
-  const fetchReports = useCallback(async () => {
-    if (!user) {
-      return;
-    }
-    try {
-      console.log('Fetching reports...');
-      const { data, error } = await supabase
-        .from('raportet')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Supabase fetch error:', error);
-        throw error;
-      }
-      
-      console.log('Reports fetched:', data);
-      setReports(data || []);
-    } catch (err) {
-      console.error('Error fetching reports:', err);
-      setMessage({ text: 'Nuk mund të ngarkohen raportet nga Supabase.', type: 'error' });
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (user) fetchReports();
-  }, [user, fetchReports]);
-
-  const showMessage = (text, type = 'success') => {
-    setMessage({ text, type });
-    setTimeout(() => setMessage({ text: '', type: '' }), 3200);
-  };
-
-  const resetForm = () => {
-    setEditingId(null);
-    setFormData({
-      title: '',
-      description: '',
-      type: incidentTypes[0],
-      severity: severityOptions[0],
-      status: 'active',
-    });
-  };
-
-  const handleSubmit = async (e, retryCount = 0) => {
-    e.preventDefault();
-    if (!formData.title.trim()) {
-      showMessage('Titulli është i nevojshëm.', 'error');
-      return;
-    }
-
-    // Check if offline
-    if (!navigator.onLine) {
-      showMessage('Jeni offline. Kontrolloni lidhjen tuaj të internetit dhe provoni përsëri.', 'error');
-      return;
-    }
-
-    setSubmitting(true);
-
-    try {
-      const payload = {
-        'Titulli i incidentit': formData.title.trim(),
-        'Përshkrimi': formData.description.trim(),
-        'Kategoria': formData.type,
-        'Rëndësia': formData.severity,
-        'Statusi': formData.status,
-      };
-
-      console.log('Sending payload to Supabase:', payload);
-
-      const { data, error } = await supabase
-        .from('raportet')
-        .insert([payload])
-        .select();
-
-      if (error) {
-        console.error('Supabase insert error:', error);
-        throw error;
-      }
-      
-      console.log('Report successfully saved:', data);
-      resetForm();
-      await fetchReports();
-      showMessage('Raporti juaj u regjistrua me sukses! ✓');
-    } catch (err) {
-      console.error('Error submitting report:', err);
-      let message = 'Nuk mund të ruhet incidenti.';
-
-      if (err.message.includes('timeout') || err.message.includes('skaduar')) {
-        message = 'Kërkesa ka skaduar. Provoni përsëri.';
-      } else if (err.message.includes('network') || err.message.includes('fetch')) {
-        message = 'Problem me lidhjen. Kontrolloni internetin dhe provoni përsëri.';
-      }
-
-      showMessage(message, 'error');
-
-      // Auto-retry for network errors, up to 2 retries
-      if ((err.message.includes('network') || err.message.includes('timeout') || err.message.includes('fetch')) && retryCount < 2) {
-        console.log(`Retrying submit... Attempt ${retryCount + 1}`);
-        setTimeout(() => handleSubmit({ preventDefault: () => {} }, retryCount + 1), 3000);
-        showMessage(`${message} (Duke provuar përsëri...)`, 'error');
-        return;
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleUpdate = async (id) => {
-    if (!formData.title.trim()) {
-      showMessage('Titulli është i nevojshëm.', 'error');
-      return;
-    }
-
-    try {
-      const payload = {
-        'Titulli i incidentit': formData.title.trim(),
-        'Përshkrimi': formData.description.trim(),
-        'Kategoria': formData.type,
-        'Rëndësia': formData.severity,
-        'Statusi': formData.status,
-      };
-      
-      const { error } = await supabase
-        .from('raportet')
-        .update(payload)
-        .eq('id', id);
-
-      if (error) throw error;
-
-      resetForm();
-      setEditingId(null);
-      await fetchReports();
-      showMessage('Incidenti u përditësua me sukses.');
-    } catch (err) {
-      console.error('Error updating report:', err);
-      showMessage('Nuk mund të përditësohet incidenti në Supabase.', 'error');
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm('Fshi këtë raport incidenti?')) return;
-    try {
-      const { error } = await supabase
-        .from('raportet')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      await fetchReports();
-      showMessage('Incidenti u hoq nga paneli yt.');
-    } catch (err) {
-      console.error('Error deleting report:', err);
-      showMessage('Nuk mund të hiqet incidenti nga Supabase.', 'error');
-    }
-  };
-
-  const startEditing = (report) => {
-    setEditingId(report.id);
-    setFormData({
-      title: report['Titulli i incidentit'],
-      description: report['Përshkrimi'],
-      type: report['Kategoria'],
-      severity: report['Rëndësia'],
-      status: report['Statusi'],
-    });
-  };
-
-  const stats = useMemo(() => {
-    const active = reports.filter((item) => item['Statusi'] === 'active').length;
-    const control = reports.filter((item) => item['Statusi'] === 'under_control').length;
-    const cleared = reports.filter((item) => item['Statusi'] === 'cleared').length;
-    return { total: reports.length, active, control, cleared };
-  }, [reports]);
-
-  const statusBadge = (status) => {
-    const option = statusOptions.find((item) => item.value === status);
-    return option ? option.badge : 'bg-slate-500/15 text-slate-300';
-  };
-
   return (
-    <div className="dark:text-slate-100 text-gray-900 dark:bg-slate-950 bg-white min-h-screen">
+    <div className={`min-h-screen ${theme === 'light' ? 'bg-slate-50 text-slate-900' : 'bg-slate-950 text-slate-100'}`}>
       <Header reports={reports} />
-      <main className="mx-auto max-w-7xl px-4 py-8 pt-24 sm:px-6 lg:px-8">
+
+      <main className="mx-auto max-w-7xl px-4 pb-10 pt-24 sm:px-6 lg:px-8">
         {message.text && (
           <div className={`mb-6 rounded-3xl border px-5 py-4 text-sm shadow-xl ${
             message.type === 'error'
-              ? 'dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200 border-rose-500/30 bg-rose-500/10 text-rose-800'
-              : 'dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200 border-emerald-500/30 bg-emerald-500/10 text-emerald-800'
-          }`}>
+              ? theme === 'light'
+                ? 'border-rose-300 bg-rose-50 text-rose-700'
+                : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+              : theme === 'light'
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+          }`}
+          >
             {message.text}
           </div>
         )}
@@ -248,133 +249,151 @@ const Dashboard = () => {
         <section className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
           <div className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-3xl dark:border dark:border-slate-800/80 dark:bg-slate-900/80 border border-gray-200 bg-white/80 p-5 shadow-xl backdrop-blur-xl">
-                <p className="text-sm uppercase tracking-[0.25em] dark:text-slate-400 text-gray-600">Total raportet</p>
-                <p className="mt-4 text-4xl font-semibold dark:text-white text-gray-900">{stats.total}</p>
+              <div className={`rounded-3xl p-5 shadow-xl backdrop-blur-xl ${cardClass}`}>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">{t('totalReports')}</p>
+                <p className="mt-4 text-4xl font-semibold text-slate-900 dark:text-white">{stats.total}</p>
               </div>
-              <div className="rounded-3xl dark:border dark:border-slate-800/80 dark:bg-slate-900/80 border border-gray-200 bg-white/80 p-5 shadow-xl backdrop-blur-xl">
-                <p className="text-sm uppercase tracking-[0.25em] dark:text-slate-400 text-gray-600">Aktiv</p>
-                <p className="mt-4 text-4xl font-semibold dark:text-cyan-300 text-cyan-700">{stats.active}</p>
+              <div className={`rounded-3xl p-5 shadow-xl backdrop-blur-xl ${cardClass}`}>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">{t('active')}</p>
+                <p className="mt-4 text-4xl font-semibold text-cyan-700 dark:text-cyan-300">{stats.active}</p>
               </div>
-              <div className="rounded-3xl dark:border dark:border-slate-800/80 dark:bg-slate-900/80 border border-gray-200 bg-white/80 p-5 shadow-xl backdrop-blur-xl">
-                <p className="text-sm uppercase tracking-[0.25em] dark:text-slate-400 text-gray-600">Pastruar</p>
-                <p className="mt-4 text-4xl font-semibold dark:text-sky-300 text-sky-700">{stats.cleared}</p>
+              <div className={`rounded-3xl p-5 shadow-xl backdrop-blur-xl ${cardClass}`}>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">{t('cleared')}</p>
+                <p className="mt-4 text-4xl font-semibold text-sky-700 dark:text-sky-300">{stats.cleared}</p>
               </div>
             </div>
 
-            <div className="rounded-3xl dark:border dark:border-slate-800/80 dark:bg-slate-900/80 border border-gray-200 bg-white/80 p-6 shadow-xl backdrop-blur-xl">
+            <div className={`rounded-3xl p-6 shadow-xl backdrop-blur-xl ${cardClass}`}>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.25em] dark:text-slate-400 text-gray-600">Operacionet aktuale</p>
-                  <h2 className="mt-3 text-3xl font-semibold dark:text-white text-gray-900">Pamja e përgjithshme e rrjedhës së trafikut</h2>
+                  <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">{t('currentOperations')}</p>
+                  <h2 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-white">{t('trafficOverview')}</h2>
                 </div>
-                <div className="rounded-full dark:bg-slate-800/70 bg-gray-100 px-4 py-2 text-sm dark:text-slate-300 text-gray-700">
-                  {new Date().toLocaleString()}
+                <div className={`rounded-full px-4 py-2 text-sm ${theme === 'light' ? 'bg-slate-100 text-slate-700' : 'bg-slate-800/70 text-slate-300'}`}>
+                  {new Date().toLocaleString(locale)}
                 </div>
               </div>
+
               <div className="mt-6 grid gap-4 lg:grid-cols-3">
-                <div className="rounded-3xl bg-slate-950/80 p-4">
-                  <p className="text-sm text-slate-400">Korridori më i prekur</p>
-                  <p className="mt-3 text-lg font-semibold text-white">Rruga I-95</p>
-                  <p className="mt-2 text-slate-400">Shumë vonesa për shkak të mbylljes së korsisë dhe trafikut të rëndë.</p>
+                <div className={`rounded-3xl p-4 ${innerCardClass}`}>
+                  <p className={`text-sm ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>{t('affectedCorridor')}</p>
+                  <p className="mt-3 text-lg font-semibold">{t('route')}</p>
+                  <p className={`mt-2 ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>{t('heavyTrafficDescription')}</p>
                 </div>
-                <div className="rounded-3xl bg-slate-950/80 p-4">
-                  <p className="text-sm text-slate-400">Incidenti kryesor</p>
-                  <p className="mt-3 text-lg font-semibold text-white">Aksident në Veri Hub</p>
-                  <p className="mt-2 text-slate-400">Ekipi i përgjigjes u dërgua. Pastrimi i parashikuar në 45 min.</p>
+                <div className={`rounded-3xl p-4 ${innerCardClass}`}>
+                  <p className={`text-sm ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>{t('mainIncident')}</p>
+                  <p className="mt-3 text-lg font-semibold">{t('northHub')}</p>
+                  <p className={`mt-2 ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>{t('responseTeam')}</p>
                 </div>
-                <div className="rounded-3xl bg-slate-950/80 p-4">
-                  <p className="text-sm text-slate-400">Shëndeti i sistemit</p>
-                  <p className="mt-3 text-lg font-semibold text-white">Stabil</p>
-                  <p className="mt-2 text-slate-400">Të gjitha sistemet e monitorimit po funksionojnë normalisht.</p>
+                <div className={`rounded-3xl p-4 ${innerCardClass}`}>
+                  <p className={`text-sm ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>{t('systemHealth')}</p>
+                  <p className="mt-3 text-lg font-semibold">{t('stable')}</p>
+                  <p className={`mt-2 ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>{t('allSystems')}</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <aside className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
-            <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Harta e trafikut live</p>
+          <aside className={`rounded-3xl p-6 shadow-xl backdrop-blur-xl ${cardClass}`}>
+            <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">{t('liveTrafficMap')}</p>
             <div className="mt-5">
-              <TrafficMap reports={reports} />
+              <TrafficMap
+                reports={reports}
+                selectedLocation={formData.location.lat && formData.location.lng ? formData.location : null}
+                onLocationSelect={(coords) => setFormData((prev) => ({ ...prev, location: coords }))}
+              />
             </div>
           </aside>
         </section>
 
         <section className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-          <div className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
+          <div ref={formSectionRef} className={`rounded-3xl p-6 shadow-xl backdrop-blur-xl ${cardClass}`}>
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Raporti i incidentit</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Krijo një alarm trafiku të ri</h2>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">{t('reportIncident')}</p>
+                <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{t('createNewTrafficAlert')}</h2>
               </div>
-              <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-300">
-                {editingId ? 'Modaliteti i redaktimit' : 'Raport i ri'}
+              <span className={`rounded-full px-3 py-1 text-xs uppercase tracking-[0.2em] ${theme === 'light' ? 'bg-slate-100 text-slate-700' : 'bg-slate-800/70 text-slate-300'}`}>
+                {editingReport ? t('editMode') : t('newReport')}
               </span>
             </div>
 
-            <form onSubmit={editingId ? (e) => {e.preventDefault(); handleUpdate(editingId);} : handleSubmit} className="mt-6 space-y-4">
+            <form onSubmit={editingReport ? handleUpdate : handleSubmit} className="mt-6 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block text-sm font-medium text-slate-200">
-                  Titulli i incidentit
+                <label className={`block text-sm font-medium ${theme === 'light' ? 'text-slate-700' : 'text-slate-200'}`}>
+                  {t('incidentTitle')}
                   <input
                     value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    placeholder="Mbyllja e rrugës në M4"
-                    className="mt-2 w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                    onChange={(event) => setFormData((prev) => ({ ...prev, title: event.target.value }))}
+                    placeholder={t('enterTitle')}
+                    className={`mt-2 w-full rounded-2xl border px-4 py-3 outline-none transition focus:border-cyan-400 ${theme === 'light' ? 'border-slate-300 bg-white text-slate-900' : 'border-slate-700/80 bg-slate-950/90 text-slate-100'}`}
                   />
                 </label>
-                <label className="block text-sm font-medium text-slate-200">
-                  Kategoria
+
+                <label className={`block text-sm font-medium ${theme === 'light' ? 'text-slate-700' : 'text-slate-200'}`}>
+                  {t('category')}
                   <select
                     value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    className="mt-2 w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                    onChange={(event) => setFormData((prev) => ({ ...prev, type: event.target.value }))}
+                    className={`mt-2 w-full rounded-2xl border px-4 py-3 outline-none transition focus:border-cyan-400 ${theme === 'light' ? 'border-slate-300 bg-white text-slate-900' : 'border-slate-700/80 bg-slate-950/90 text-slate-100'}`}
                   >
-                    {incidentTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
+                    {INCIDENT_TYPE_KEYS.map((typeKey) => (
+                      <option key={typeKey} value={typeKey}>
+                        {t(typeKey)}
                       </option>
                     ))}
                   </select>
                 </label>
               </div>
 
-              <label className="block text-sm font-medium text-slate-200">
-                Përshkrimi
+              <label className={`block text-sm font-medium ${theme === 'light' ? 'text-slate-700' : 'text-slate-200'}`}>
+                {t('description')}
                 <textarea
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  onChange={(event) => setFormData((prev) => ({ ...prev, description: event.target.value }))}
                   rows="4"
-                  placeholder="Shto detaje për incidentin dhe përgjigjen e rekomanduar."
-                  className="mt-2 w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                  placeholder={t('addDetails')}
+                  className={`mt-2 w-full rounded-2xl border px-4 py-3 outline-none transition focus:border-cyan-400 ${theme === 'light' ? 'border-slate-300 bg-white text-slate-900' : 'border-slate-700/80 bg-slate-950/90 text-slate-100'}`}
                 />
               </label>
 
+              <div className={`rounded-3xl border p-4 ${theme === 'light' ? 'border-slate-200 bg-slate-100/80 text-slate-900' : 'border-slate-800/80 bg-slate-950/90 text-slate-200'}`}>
+                <p className={`mb-2 text-sm font-medium ${theme === 'light' ? 'text-slate-900' : 'text-slate-200'}`}>{t('selectLocation')}</p>
+                <p className={`text-sm ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>{t('clickMapToPlacePin')}</p>
+                {formData.location.lat && formData.location.lng && (
+                  <div className={`mt-3 rounded-2xl p-3 text-sm ${theme === 'light' ? 'bg-white text-slate-900' : 'bg-slate-900/80 text-slate-100'}`}>
+                    <p>{t('locationSelected')}:</p>
+                    <p>{`${formData.location.lat.toFixed(4)}, ${formData.location.lng.toFixed(4)}`}</p>
+                  </div>
+                )}
+              </div>
+
               <div className="grid gap-4 sm:grid-cols-3">
-                <label className="block text-sm font-medium text-slate-200">
-                  Rëndësia
+                <label className={`block text-sm font-medium ${theme === 'light' ? 'text-slate-700' : 'text-slate-200'}`}>
+                  {t('severity')}
                   <select
                     value={formData.severity}
-                    onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
-                    className="mt-2 w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                    onChange={(event) => setFormData((prev) => ({ ...prev, severity: event.target.value }))}
+                    className={`mt-2 w-full rounded-2xl border px-4 py-3 outline-none transition focus:border-cyan-400 ${theme === 'light' ? 'border-slate-300 bg-white text-slate-900' : 'border-slate-700/80 bg-slate-950/90 text-slate-100'}`}
                   >
-                    {severityOptions.map((severity) => (
-                      <option key={severity} value={severity}>
-                        {severity}
+                    {SEVERITY_KEYS.map((severityKey) => (
+                      <option key={severityKey} value={severityKey}>
+                        {t(severityKey)}
                       </option>
                     ))}
                   </select>
                 </label>
-                <label className="block text-sm font-medium text-slate-200">
-                  Statusi
+
+                <label className={`block text-sm font-medium ${theme === 'light' ? 'text-slate-700' : 'text-slate-200'}`}>
+                  {t('status')}
                   <select
                     value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    className="mt-2 w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                    onChange={(event) => setFormData((prev) => ({ ...prev, status: event.target.value }))}
+                    className={`mt-2 w-full rounded-2xl border px-4 py-3 outline-none transition focus:border-cyan-400 ${theme === 'light' ? 'border-slate-300 bg-white text-slate-900' : 'border-slate-700/80 bg-slate-950/90 text-slate-100'}`}
                   >
-                    {statusOptions.map((status) => (
-                      <option key={status.value} value={status.value}>
-                        {status.label}
+                    {STATUS_OPTIONS.map((statusOption) => (
+                      <option key={statusOption.value} value={statusOption.value}>
+                        {t(statusOption.labelKey)}
                       </option>
                     ))}
                   </select>
@@ -393,71 +412,78 @@ const Dashboard = () => {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                       </svg>
-                      Duke ruajtur...
+                      {t('saving')}
                     </>
                   ) : (
-                    editingId ? 'Përditëso raportin' : 'Shto incidentin'
+                    editingReport ? t('updateReport') : t('addIncident')
                   )}
                 </button>
-                {editingId && (
+
+                {editingReport && (
                   <button
                     type="button"
                     onClick={resetForm}
                     disabled={submitting}
-                    className="rounded-full bg-slate-800 px-6 py-3 text-sm text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                    className={`rounded-full px-6 py-3 text-sm transition disabled:cursor-not-allowed disabled:opacity-70 ${theme === 'light' ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
                   >
-                    Anulo redaktimin
+                    {t('cancelEdit')}
                   </button>
                 )}
               </div>
             </form>
           </div>
 
-          <div className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
+          <div className={`rounded-3xl p-6 shadow-xl backdrop-blur-xl ${cardClass}`}>
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Incidentet e fundit</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Rrjedha e raporteve</h2>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">{t('recentIncidents')}</p>
+                <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{t('reportFlow')}</h2>
               </div>
-              <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-300">
-                {reports.length} total
+              <span className={`rounded-full px-3 py-1 text-xs uppercase tracking-[0.2em] ${theme === 'light' ? 'bg-slate-100 text-slate-700' : 'bg-slate-800/70 text-slate-300'}`}>
+                {reports.length} {t('totalItems')}
               </span>
             </div>
 
             <div className="mt-6 space-y-4">
               {reports.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-slate-700/70 bg-slate-950/80 p-8 text-center text-slate-400">
-                  Ende nuk ka raporte incidenti. Përdor formularin për të shtuar një dhe monitoro kushtet e trafikut.
+                <div className={`rounded-3xl border border-dashed p-8 text-center ${theme === 'light' ? 'border-slate-300 bg-slate-50 text-slate-500' : 'border-slate-700/70 bg-slate-950/80 text-slate-400'}`}>
+                  {t('noReports')}
                 </div>
               ) : (
                 reports.map((report) => (
-                  <div key={report.id} className="rounded-3xl border border-slate-800/80 bg-slate-950/80 p-5 shadow-inner">
+                  <div key={report.id} className={`rounded-3xl border p-5 shadow-inner ${theme === 'light' ? 'border-slate-200 bg-slate-50' : 'border-slate-800/80 bg-slate-950/80'}`}>
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <p className="text-sm text-slate-400 uppercase tracking-[0.2em]">{report['Kategoria']}</p>
-                        <h3 className="mt-2 text-xl font-semibold text-white">{report['Titulli i incidentit']}</h3>
-                        <p className="mt-2 text-slate-400">{report['Përshkrimi'] || 'Nuk janë dhënë detaje shtesë.'}</p>
+                        <p className={`text-sm uppercase tracking-[0.2em] ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>{formatTypeLabel(report.type)}</p>
+                        <h3 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{report.title}</h3>
+                        <p className={`mt-2 ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>{report.description || t('noDetails')}</p>
                       </div>
+
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(report['Statusi'])}`}>
-                          {statusOptions.find((option) => option.value === report['Statusi'])?.label}
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadgeClass(report.status)}`}>
+                          {formatStatusLabel(report.status)}
                         </span>
-                        <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs text-slate-300">{report['Rëndësia']}</span>
-                        <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs text-slate-300">{new Date(report.created_at).toLocaleDateString()}</span>
+                        <span className={`rounded-full px-3 py-1 text-xs ${theme === 'light' ? 'bg-slate-200 text-slate-700' : 'bg-slate-800/70 text-slate-300'}`}>
+                          {formatSeverityLabel(report.severity)}
+                        </span>
+                        <span className={`rounded-full px-3 py-1 text-xs ${theme === 'light' ? 'bg-slate-200 text-slate-700' : 'bg-slate-800/70 text-slate-300'}`}>
+                          {new Date(report.createdAt).toLocaleDateString(locale)}
+                        </span>
                       </div>
                     </div>
+
                     <div className="mt-4 flex flex-wrap gap-3">
                       <button
                         onClick={() => startEditing(report)}
-                        className="rounded-full bg-slate-800 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-700"
+                        className={`rounded-full px-4 py-2 text-sm transition ${theme === 'light' ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
                       >
-                        Redakto
+                        {t('edit')}
                       </button>
                       <button
-                        onClick={() => handleDelete(report.id)}
-                        className="rounded-full bg-rose-500/15 px-4 py-2 text-sm text-rose-300 transition hover:bg-rose-500/25"
+                        onClick={() => handleDelete(report)}
+                        className="rounded-full bg-rose-500/15 px-4 py-2 text-sm text-rose-300 transition hover:bg-rose-500/25 dark:text-rose-300"
                       >
-                        Fshi
+                        {t('delete')}
                       </button>
                     </div>
                   </div>

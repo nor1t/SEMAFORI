@@ -3,8 +3,14 @@
 @tailwind utilities;
 
 @layer base {
+  html,
+  body,
+  #root {
+    @apply min-h-screen;
+  }
+
   body {
-    @apply min-h-screen transition-colors duration-300;
+    @apply transition-colors duration-300;
   }
 
   body.dark {

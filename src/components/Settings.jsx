@@ -8,13 +8,12 @@ const Settings = ({ onClose }) => {
   const [notifications, setNotifications] = useState(() => localStorage.getItem('notifications') !== 'false');
   const [autoSave, setAutoSave] = useState(() => localStorage.getItem('autoSave') !== 'false');
 
-  const handleThemeChange = (newTheme) => {
-    setTheme(newTheme);
-  };
+  const panelClass = theme === 'light'
+    ? 'bg-white border-slate-200 text-slate-900'
+    : 'bg-slate-900 border-slate-700 text-white';
 
-  const handleLanguageChange = (newLang) => {
-    setLanguage(newLang);
-  };
+  const secondaryTextClass = theme === 'light' ? 'text-slate-500' : 'text-slate-400';
+  const sectionTitleClass = theme === 'light' ? 'text-slate-700' : 'text-slate-200';
 
   const handleNotificationsChange = (enabled) => {
     setNotifications(enabled);
@@ -27,172 +26,148 @@ const Settings = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 dark:bg-slate-900 rounded-3xl border border-slate-700 w-full max-w-md shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-700">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <div className={`w-full max-w-md rounded-3xl border shadow-2xl ${panelClass}`}>
+        <div className={`flex items-center justify-between border-b p-6 ${theme === 'light' ? 'border-slate-200' : 'border-slate-700'}`}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center">
-              <span className="text-white text-lg">⚙️</span>
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-r from-cyan-500 to-blue-500">
+              <span className="text-lg text-white">⚙️</span>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-white">{t('settings')}</h3>
-              <p className="text-sm text-slate-400">{t('personalizeExperience')}</p>
+              <h3 className={`text-lg font-semibold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{t('settings')}</h3>
+              <p className={`text-sm ${secondaryTextClass}`}>{t('personalizeExperience')}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition"
+            className={`flex h-8 w-8 items-center justify-center rounded-full transition ${theme === 'light' ? 'bg-slate-200 text-slate-700 hover:bg-slate-300 hover:text-slate-900' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'}`}
           >
             ✕
           </button>
         </div>
 
-        {/* Settings Content */}
-        <div className="p-6 space-y-6 max-h-96 overflow-y-auto">
-          {/* Theme Setting */}
+        <div className="max-h-96 space-y-6 overflow-y-auto p-6">
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-slate-200 uppercase tracking-wide">{t('theme')}</h4>
+            <h4 className={`text-sm font-semibold uppercase tracking-wide ${sectionTitleClass}`}>{t('theme')}</h4>
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => handleThemeChange('light')}
-                className={`p-4 rounded-2xl border-2 transition ${
+                onClick={() => setTheme('light')}
+                className={`rounded-2xl border-2 p-4 transition ${
                   theme === 'light'
                     ? 'border-cyan-400 bg-cyan-500/10'
-                    : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+                    : 'border-slate-300 bg-slate-100 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-600'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-yellow-400 flex items-center justify-center">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-yellow-400">
                     <span className="text-lg">☀️</span>
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-medium text-white">{t('light')}</p>
-                    <p className="text-xs text-slate-400">{t('lightTheme')}</p>
+                    <p className={`text-sm font-medium ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{t('light')}</p>
+                    <p className={`text-xs ${secondaryTextClass}`}>{t('lightTheme')}</p>
                   </div>
                 </div>
               </button>
+
               <button
-                onClick={() => handleThemeChange('dark')}
-                className={`p-4 rounded-2xl border-2 transition ${
+                onClick={() => setTheme('dark')}
+                className={`rounded-2xl border-2 p-4 transition ${
                   theme === 'dark'
                     ? 'border-cyan-400 bg-cyan-500/10'
-                    : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+                    : 'border-slate-300 bg-slate-100 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-600'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700">
                     <span className="text-lg">🌙</span>
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-medium text-white">{t('dark')}</p>
-                    <p className="text-xs text-slate-400">{t('darkTheme')}</p>
+                    <p className={`text-sm font-medium ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{t('dark')}</p>
+                    <p className={`text-xs ${secondaryTextClass}`}>{t('darkTheme')}</p>
                   </div>
                 </div>
               </button>
             </div>
           </div>
 
-          {/* Language Setting */}
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-slate-200 uppercase tracking-wide">{t('language')}</h4>
+            <h4 className={`text-sm font-semibold uppercase tracking-wide ${sectionTitleClass}`}>{t('language')}</h4>
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => handleLanguageChange('albanian')}
-                className={`p-4 rounded-2xl border-2 transition ${
+                onClick={() => setLanguage('albanian')}
+                className={`rounded-2xl border-2 p-4 transition ${
                   language === 'albanian'
                     ? 'border-cyan-400 bg-cyan-500/10'
-                    : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+                    : 'border-slate-300 bg-slate-100 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-600'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center text-white font-bold text-xs">
-                    SQ
-                  </div>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">SQ</div>
                   <div className="text-left">
-                    <p className="text-sm font-medium text-white">{t('albanian')}</p>
-                    <p className="text-xs text-slate-400">Shqiptare</p>
+                    <p className={`text-sm font-medium ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{t('albanian')}</p>
+                    <p className={`text-xs ${secondaryTextClass}`}>Shqip</p>
                   </div>
                 </div>
               </button>
+
               <button
-                onClick={() => handleLanguageChange('english')}
-                className={`p-4 rounded-2xl border-2 transition ${
+                onClick={() => setLanguage('english')}
+                className={`rounded-2xl border-2 p-4 transition ${
                   language === 'english'
                     ? 'border-cyan-400 bg-cyan-500/10'
-                    : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+                    : 'border-slate-300 bg-slate-100 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-600'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs">
-                    EN
-                  </div>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">EN</div>
                   <div className="text-left">
-                    <p className="text-sm font-medium text-white">{t('english')}</p>
-                    <p className="text-xs text-slate-400">English</p>
+                    <p className={`text-sm font-medium ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{t('english')}</p>
+                    <p className={`text-xs ${secondaryTextClass}`}>English</p>
                   </div>
                 </div>
               </button>
             </div>
           </div>
 
-          {/* Notifications Toggle */}
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+          <div className={`flex items-center justify-between rounded-2xl border p-4 ${theme === 'light' ? 'border-slate-200 bg-slate-100/80' : 'border-slate-700 bg-slate-800/50'}`}>
             <div>
-              <p className="text-sm font-medium text-white">{t('notifications')}</p>
-              <p className="text-xs text-slate-400">Get alerts for new incidents</p>
+              <p className={`text-sm font-medium ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{t('notifications')}</p>
+              <p className={`text-xs ${secondaryTextClass}`}>{t('notificationsInfo')}</p>
             </div>
             <button
               onClick={() => handleNotificationsChange(!notifications)}
-              className={`w-12 h-6 rounded-full transition ${
-                notifications ? 'bg-cyan-500' : 'bg-slate-600'
-              }`}
+              className={`h-6 w-12 rounded-full transition ${notifications ? 'bg-cyan-500' : 'bg-slate-400 dark:bg-slate-600'}`}
             >
-              <div
-                className={`w-5 h-5 bg-white rounded-full transition transform ${
-                  notifications ? 'translate-x-6' : 'translate-x-0.5'
-                }`}
-              />
+              <div className={`h-5 w-5 rounded-full bg-white transition ${notifications ? 'translate-x-6' : 'translate-x-0.5'}`} />
             </button>
           </div>
 
-          {/* Auto-Save Toggle */}
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+          <div className={`flex items-center justify-between rounded-2xl border p-4 ${theme === 'light' ? 'border-slate-200 bg-slate-100/80' : 'border-slate-700 bg-slate-800/50'}`}>
             <div>
-              <p className="text-sm font-medium text-white">{t('autoSave')}</p>
-              <p className="text-xs text-slate-400">Automatically save reports</p>
+              <p className={`text-sm font-medium ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{t('autoSave')}</p>
+              <p className={`text-xs ${secondaryTextClass}`}>{t('autoSaveInfo')}</p>
             </div>
             <button
               onClick={() => handleAutoSaveChange(!autoSave)}
-              className={`w-12 h-6 rounded-full transition ${
-                autoSave ? 'bg-cyan-500' : 'bg-slate-600'
-              }`}
+              className={`h-6 w-12 rounded-full transition ${autoSave ? 'bg-cyan-500' : 'bg-slate-400 dark:bg-slate-600'}`}
             >
-              <div
-                className={`w-5 h-5 bg-white rounded-full transition transform ${
-                  autoSave ? 'translate-x-6' : 'translate-x-0.5'
-                }`}
-              />
+              <div className={`h-5 w-5 rounded-full bg-white transition ${autoSave ? 'translate-x-6' : 'translate-x-0.5'}`} />
             </button>
           </div>
 
-          {/* App Info */}
-          <div className="pt-4 border-t border-slate-700">
-            <div className="text-center">
-              <h3 className="text-lg font-semibold text-white">SEMAFORI</h3>
-              <p className="text-sm text-slate-400">Version 1.0.0</p>
-              <p className="text-xs text-slate-500 mt-2">Traffic Management System</p>
-            </div>
+          <div className={`border-t pt-4 text-center ${theme === 'light' ? 'border-slate-200' : 'border-slate-700'}`}>
+            <h3 className={`text-lg font-semibold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{t('appInfoTitle')}</h3>
+            <p className={`text-sm ${secondaryTextClass}`}>{t('appInfoSubtitle')}</p>
+            <p className={`mt-2 text-xs ${theme === 'light' ? 'text-slate-500' : 'text-slate-500'}`}>{t('trafficSystemInfo')}</p>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-slate-700">
+        <div className={`border-t p-4 ${theme === 'light' ? 'border-slate-200' : 'border-slate-700'}`}>
           <button
             onClick={onClose}
-            className="w-full py-2 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold transition"
+            className="w-full rounded-xl bg-cyan-500 px-4 py-2 font-semibold text-slate-950 transition hover:bg-cyan-600"
           >
-            Close
+            {t('close')}
           </button>
         </div>
       </div>
