@@ -344,12 +344,15 @@ function TrafficMap() {
               className="rounded-2xl"
             >
               <TileLayer
-                url={dark
-                  ? "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
-                  : "https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png"
-                }
-                attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors'
-              />
+  url={dark
+    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+    : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+  }
+  attribution={dark
+    ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>'
+    : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }
+/>
               {/* City labels */}
               <Marker position={[42.6629, 21.1655]} icon={L.divIcon({
                 html: `<div style="background: transparent; border: none; font-size: 12px; font-weight: bold; color: ${dark ? '#60a5fa' : '#2563eb'}; text-shadow: 1px 1px 1px rgba(0,0,0,0.7);">Pristina</div>`,
