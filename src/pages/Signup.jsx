@@ -106,7 +106,7 @@ const Signup = () => {
           </div>
           <div className="flex items-center justify-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center bg-tblue-500/20">
-              <img src="/docs/logo.PNG" alt="SEMAFORI Logo" className="w-8 h-8 object-contain" />
+              <img src="/logo.PNG" alt="SEMAFORI Logo" className="w-8 h-8 object-contain" />
             </div>
             <div>
               <span className={`font-serif font-semibold text-lg tracking-wide ${theme === 'dark' ? 'text-white' : 'text-navy-800'}`}>SEMAFORI</span>

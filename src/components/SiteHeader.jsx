@@ -91,7 +91,7 @@ const SiteHeader = () => {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         <Link to="/dashboard" className="flex items-center gap-3 group">
           <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-tblue-500/20">
-            <img src="/docs/logo.PNG" alt="SEMAFORI Logo" className="h-8 w-8 object-contain" />
+            <img src="/logo.PNG" alt="SEMAFORI Logo" className="h-8 w-8 object-contain" />
           </div>
           <div>
             <span className={`font-serif text-sm font-semibold tracking-wide ${dark ? 'text-white' : 'text-navy-800'}`}>SEMAFORI</span>

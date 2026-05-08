@@ -852,7 +852,7 @@ function Footer() {
           <div className="md:col-span-1">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-tblue-500/20">
-                <img src="/docs/logo.PNG" alt="SEMAFORI Logo" className="w-5 h-5 object-contain" />
+                <img src="/logo.PNG" alt="SEMAFORI Logo" className="w-5 h-5 object-contain" />
               </div>
               <div>
                 <span className={`font-serif font-semibold text-sm ${dark ? 'text-white' : 'text-navy-800'}`}>SEMAFORI</span>

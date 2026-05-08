@@ -53,7 +53,7 @@ const SiteFooter = () => {
           <div className="md:col-span-1">
             <div className="mb-4 flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-tblue-500/20">
-                <img src="/docs/logo.PNG" alt="SEMAFORI Logo" className="h-5 w-5 object-contain" />
+                <img src="/logo.PNG" alt="SEMAFORI Logo" className="h-5 w-5 object-contain" />
               </div>
               <div>
                 <span className={`font-serif text-sm font-semibold ${dark ? 'text-white' : 'text-navy-800'}`}>SEMAFORI</span>
