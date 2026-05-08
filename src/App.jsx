@@ -7,6 +7,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
+import TrafficCommandCenter from './pages/TrafficCommandCenter';
 
 function App() {
   return (
@@ -18,11 +20,17 @@ function App() {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/dashboard" element={
+                <ProtectedRoute>
+                  <TrafficCommandCenter />
+                </ProtectedRoute>
+              } />
               <Route
-                path="/dashboard"
+                path="/traffic-command-center"
                 element={
                   <ProtectedRoute>
-                    <Dashboard />
+                    <TrafficCommandCenter />
                   </ProtectedRoute>
                 }
               />

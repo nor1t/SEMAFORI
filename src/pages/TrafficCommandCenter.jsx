@@ -1,85 +1,48 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
+import { groq } from '../services/groqService';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import SiteHeader from '../components/SiteHeader';
+import SiteFooter from '../components/SiteFooter';
 
 /* ─── Data ─── */
 const trafficMarkers = [
-  { id:1, x:18, y:25, type:'congestion', label:'CBD Gridlock', severity:'high', vehicles:847, avgSpeed:12, road:'Zhongshan Ave 中山路' },
-  { id:2, x:42, y:35, type:'accident', label:'Minor Collision', severity:'medium', vehicles:120, avgSpeed:28, road:'Riverside Dr 滨江大道' },
-  { id:3, x:65, y:20, type:'flow', label:'Smooth Flow', severity:'low', vehicles:342, avgSpeed:58, road:'Eastern Ring 东环快速' },
-  { id:4, x:78, y:55, type:'construction', label:'Road Work Zone', severity:'medium', vehicles:95, avgSpeed:22, road:'Southern Blvd 南大街' },
-  { id:5, x:30, y:65, type:'congestion', label:'Rush Hour Delay', severity:'high', vehicles:620, avgSpeed:15, road:'West Gate Rd 西门路' },
-  { id:6, x:55, y:70, type:'flow', label:'Normal Traffic', severity:'low', vehicles:210, avgSpeed:45, road:'Park Lane 公园巷' },
-  { id:7, x:85, y:30, type:'accident', label:'Multi-Vehicle', severity:'high', vehicles:45, avgSpeed:0, road:'Highway 204 国道204' },
-  { id:8, x:12, y:50, type:'flow', label:'Light Traffic', severity:'low', vehicles:88, avgSpeed:62, road:'North Bridge 北桥' },
+  { id:1, lat:42.6629, lng:21.1655, type:'congestion', label:'CBD Gridlock', severity:'high', vehicles:847, avgSpeed:12, road:'Mother Teresa Blvd' },
+  { id:2, lat:42.6550, lng:21.1700, type:'accident', label:'Minor Collision', severity:'medium', vehicles:120, avgSpeed:28, road:'Bill Clinton Blvd' },
+  { id:3, lat:42.6700, lng:21.1800, type:'flow', label:'Smooth Flow', severity:'low', vehicles:342, avgSpeed:58, road:'Agim Ramadani St' },
+  { id:4, lat:42.6450, lng:21.1550, type:'construction', label:'Road Work Zone', severity:'medium', vehicles:95, avgSpeed:22, road:'Rruga e Durrësit' },
+  { id:5, lat:42.6350, lng:21.1450, type:'congestion', label:'Rush Hour Delay', severity:'high', vehicles:620, avgSpeed:15, road:'Autostrada Prishtinë-Ferizaj' },
+  { id:6, lat:42.6500, lng:21.1600, type:'flow', label:'Normal Traffic', severity:'low', vehicles:210, avgSpeed:45, road:'Rruga 18 Shtatori' },
+  { id:7, lat:42.6750, lng:21.1850, type:'accident', label:'Multi-Vehicle', severity:'high', vehicles:45, avgSpeed:0, road:'Highway M-9' },
+  { id:8, lat:42.6400, lng:21.1500, type:'flow', label:'Light Traffic', severity:'low', vehicles:88, avgSpeed:62, road:'Rruga B' },
 ];
 
 const liveNotifications = [
-  { id:1, time:'14:32', type:'alert', msg:'Severe congestion detected on Zhongshan Ave — avg speed 12 km/h', icon:'lucide:alert-triangle' },
+  { id:1, time:'14:32', type:'alert', msg:'Severe congestion detected on Mother Teresa Blvd — avg speed 12 km/h', icon:'lucide:alert-triangle' },
   { id:2, time:'14:28', type:'info', msg:'AI model updated: traffic prediction accuracy now 96.3%', icon:'lucide:brain' },
-  { id:3, time:'14:25', type:'warning', msg:'Multi-vehicle accident on Highway 204 — emergency response dispatched', icon:'lucide:siren' },
+  { id:3, time:'14:25', type:'warning', msg:'Multi-vehicle accident on Highway M-9 — emergency response dispatched', icon:'lucide:siren' },
   { id:4, time:'14:20', type:'success', msg:'Rush hour pattern optimization reduced delays by 18%', icon:'lucide:check-circle' },
   { id:5, time:'14:15', type:'info', msg:'New sensor cluster online: District 7 coverage now 100%', icon:'lucide:wifi' },
-  { id:6, time:'14:10', type:'alert', msg:'Construction zone on Southern Blvd — lane closure until 18:00', icon:'lucide:hard-hat' },
+  { id:6, time:'14:10', type:'alert', msg:'Construction zone on Rruga e Durrësit — lane closure until 18:00', icon:'lucide:hard-hat' },
   { id:7, time:'14:05', type:'success', msg:'Emergency route cleared for ambulance — ETA reduced 4 min', icon:'lucide:route' },
-];
-
-const productLines = [
-  {
-    category: 'Surveillance & Detection 监测感知',
-    origin: 'Core Infrastructure',
-    status: 'Active',
-    items: [
-      { name:'AI Camera Network', desc:'Deep learning–powered traffic camera system with real-time vehicle classification', img:'traffic-cam' },
-      { name:'Sensor Fusion Hub', desc:'Multi-modal sensor integration — LiDAR, radar, and infrared combined', img:'sensors' },
-      { name:'Drone Patrol Unit', desc:'Autonomous aerial surveillance for highway and bridge monitoring', img:'drone' },
-    ]
-  },
-  {
-    category: 'Signal & Control 信号控制',
-    origin: 'Smart Grid',
-    status: 'Active',
-    items: [
-      { name:'Adaptive Signal System', desc:'AI-driven traffic signal optimization responding to real-time flow', img:'signal' },
-      { name:'Emergency Preemption', desc:'Priority green waves for emergency vehicles, reducing response time', img:'emergency' },
-      { name:'Pedestrian Guardian', desc:'Smart crosswalk protection with predictive pedestrian detection', img:'crosswalk' },
-    ]
-  },
-  {
-    category: 'Analytics & Intelligence 分析智能',
-    origin: 'Cloud Platform',
-    status: 'Beta',
-    items: [
-      { name:'Traffic Flow Oracle', desc:'Predictive congestion modeling with 96%+ accuracy using graph neural networks', img:'analytics' },
-      { name:'Incident Forecaster', desc:'Accident probability prediction 30 minutes ahead, enabling proactive response', img:'predict' },
-      { name:'Urban Mobility Index', desc:'Comprehensive city-wide mobility scoring and trend visualization', img:'dashboard' },
-    ]
-  },
-  {
-    category: 'Public Services 公众服务',
-    origin: 'Citizen Interface',
-    status: 'Active',
-    items: [
-      { name:'Route Assistant AI', desc:'Conversational AI providing personalized route recommendations', img:'chatbot' },
-      { name:'Real-time Map Portal', desc:'Public-facing interactive traffic map with congestion heat layers', img:'public-map' },
-      { name:'Parking Oracle', desc:'Smart parking availability prediction and reservation system', img:'parking' },
-    ]
-  },
 ];
 
 const chatMessages = [
   { role:'assistant', content:'Welcome to the Traffic Command AI. I can help you analyze traffic patterns, predict congestion, or optimize routes. What would you like to explore?' },
-  { role:'user', content:'What is the current congestion status on Zhongshan Avenue?' },
-  { role:'assistant', content:'Zhongshan Avenue is currently experiencing **severe congestion** (Level 4/5). Average speed has dropped to 12 km/h with approximately 847 vehicles in a 2km stretch. The congestion is expected to persist until 16:30. I recommend diverting traffic via Eastern Ring Road for an estimated 23-minute time saving.' },
+  { role:'user', content:'What is the current congestion status on Bill Clinton Avenue?' },
+  { role:'assistant', content:'Bill Clinton Avenue is currently experiencing **severe congestion** (Level 4/5). Average speed has dropped to 12 km/h with approximately 847 vehicles in a 2km stretch. The congestion is expected to persist until 16:30. I recommend diverting traffic via Eastern Ring Road for an estimated 23-minute time saving.' },
   { role:'user', content:'Show me the predicted flow for the next 2 hours.' },
   { role:'assistant', content:'Based on our Graph Neural Network model (96.3% accuracy):\n\n• **14:30–15:00**: Congestion intensifies, avg speed ↓ to 8 km/h\n• **15:00–15:30**: Peak congestion, spill-over to adjacent roads\n• **15:30–16:00**: Gradual easing as school traffic clears\n• **16:00–16:30**: Return to moderate flow (~35 km/h)\n\nWould you like me to generate an alternate route plan?' },
 ];
 
 const statsData = [
-  { label:'Active Sensors', value:'12,847', icon:'lucide:radar', change:'+128' },
-  { label:'Vehicles Tracked', value:'2.4M', icon:'lucide:car', change:'+12%' },
+  { label:'Active Sensors', value:'5000', icon:'lucide:radar', change:'+128' },
+  { label:'Vehicles Tracked', value:'300K', icon:'lucide:car', change:'+12%' },
   { label:'Avg. City Speed', value:'34 km/h', icon:'lucide:gauge', change:'-3%' },
   { label:'AI Predictions', value:'96.3%', icon:'lucide:brain', change:'+0.8%' },
-  { label:'Incidents Today', value:'23', icon:'lucide:alert-circle', change:'-5' },
+  { label:'Incidents Today', value:'13', icon:'lucide:alert-circle', change:'-2' },
   { label:'Response Time', value:'4.2 min', icon:'lucide:clock', change:'-18%' },
 ];
 
@@ -88,91 +51,6 @@ const statsData = [
 // Grain overlay
 function GrainOverlay() {
   return null; // handled by CSS
-}
-
-// Theme Toggle
-function ThemeToggle() {
-  const { theme, toggleTheme } = useTheme();
-  const dark = theme === 'dark';
-  return (
-    <button onClick={toggleTheme}
-      className="relative w-14 h-7 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-tblue-400/50"
-      style={{ background: dark ? 'linear-gradient(135deg, #1e3a5f, #0f2540)' : 'linear-gradient(135deg, #dbeafe, #93c5fd)' }}>
-      <div className={`absolute top-0.5 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 shadow-md ${dark ? 'left-7.5 bg-navy-800' : 'left-0.5 bg-white'}`}
-        style={{ left: dark ? '30px' : '2px' }}>
-        {dark
-          ? <iconify-icon icon="lucide:moon" width="14" class="text-tblue-300"></iconify-icon>
-          : <iconify-icon icon="lucide:sun" width="14" class="text-tblue-600"></iconify-icon>
-        }
-      </div>
-    </button>
-  );
-}
-
-// Navigation
-function Navbar() {
-  const { theme } = useTheme();
-  const dark = theme === 'dark';
-  const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    const handler = () => setScrolled(window.scrollY > 50);
-    window.addEventListener('scroll', handler);
-    return () => window.removeEventListener('scroll', handler);
-  }, []);
-
-  const links = [
-    { label:'Overview 概览', href:'#overview' },
-    { label:'Live Map 实时地图', href:'#map' },
-    { label:'Products 产品线', href:'#products' },
-    { label:'AI Assistant 智能助手', href:'#ai' },
-    { label:'About 关于', href:'#about' },
-  ];
-
-  return (
-    <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${scrolled
-      ? dark ? 'bg-navy-900/90 backdrop-blur-xl shadow-2xl shadow-black/30' : 'bg-paper-50/90 backdrop-blur-xl shadow-lg shadow-black/5'
-      : 'bg-transparent'}`}>
-      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <a href="#" className="flex items-center gap-3 group">
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${dark ? 'bg-tblue-500/20 group-hover:bg-tblue-500/30' : 'bg-tblue-500/10 group-hover:bg-tblue-500/20'}`}>
-            <iconify-icon icon="lucide:radio-tower" width="20" class="text-tblue-500"></iconify-icon>
-          </div>
-          <div>
-            <span className={`font-serif font-semibold text-sm tracking-wide ${dark ? 'text-white' : 'text-navy-800'}`}>Traffic Command</span>
-            <span className={`block text-[9px] tracking-[0.2em] uppercase ${dark ? 'text-tblue-300/60' : 'text-tblue-600/60'}`}>智慧交通</span>
-          </div>
-        </a>
-        <div className="hidden lg:flex items-center gap-8">
-          {links.map(l => (
-            <a key={l.href} href={l.href}
-              className={`text-[13px] tracking-wide transition-colors duration-200 hover:text-tblue-400 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
-              {l.label}
-            </a>
-          ))}
-        </div>
-        <div className="flex items-center gap-4">
-          <ThemeToggle />
-          <button onClick={() => setMobileOpen(!mobileOpen)} className="lg:hidden p-2">
-            <iconify-icon icon={mobileOpen ? 'lucide:x' : 'lucide:menu'} width="20" class={dark ? 'text-white' : 'text-navy-800'}></iconify-icon>
-          </button>
-        </div>
-      </div>
-      {mobileOpen && (
-        <div className={`lg:hidden animate-slide-up border-t ${dark ? 'bg-navy-900/95 backdrop-blur-xl border-navy-600/30' : 'bg-paper-50/95 backdrop-blur-xl border-gray-200'}`}>
-          <div className="px-6 py-4 flex flex-col gap-3">
-            {links.map(l => (
-              <a key={l.href} href={l.href} onClick={() => setMobileOpen(false)}
-                className={`text-sm py-2 transition-colors ${dark ? 'text-gray-300 hover:text-tblue-400' : 'text-gray-600 hover:text-tblue-600'}`}>
-                {l.label}
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-    </nav>
-  );
 }
 
 // Hero Section
@@ -199,14 +77,14 @@ function Hero() {
           <div className="flex items-center gap-3 mb-8">
             <div className="eastern-line w-12"></div>
             <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>
-              Est. 2018 · Next-Gen Traffic Intelligence
+              Est. 2026 · Next-Gen Traffic Intelligence
             </span>
           </div>
           <h1 className={`font-serif text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.1] tracking-tight mb-6 ${dark ? 'text-white' : 'text-navy-900'}`}>
-            <span className={dark ? 'text-white' : 'text-navy-900'}>指挥若定</span>
+            <span className={dark ? 'text-white' : 'text-navy-900'}>Smart Traffic</span>
             <br />
             <span className={`serif-italic ${dark ? 'text-tblue-300' : 'text-tblue-600'}`}>
-              Commanding Flow
+              Management System
             </span>
           </h1>
           <p className={`text-base lg:text-lg leading-relaxed mb-10 max-w-lg ${dark ? 'text-gray-400' : 'text-gray-500'}`}
@@ -234,7 +112,7 @@ function Hero() {
           {/* Mini stats */}
           <div className="mt-14 flex gap-10">
             {[
-              { val:'12,847', label:'Sensors' },
+              { val:'5,000', label:'Sensors' },
               { val:'96.3%', label:'AI Accuracy' },
               { val:'4.2min', label:'Response' },
             ].map((s,i) => (
@@ -246,11 +124,16 @@ function Hero() {
           </div>
         </div>
 
-        {/* Hero Image */}
+        {/* Hero Video */}
         <div className="relative animate-fade-in" style={{animationDelay:'0.3s', animationFillMode:'both'}}>
           <div className="relative rounded-2xl overflow-hidden shadow-2xl group">
-            <img src="https://picsum.photos/seed/traffic-aerial-city/800/600.jpg" alt="Traffic aerial view"
-              className="w-full h-[400px] lg:h-[520px] object-cover transition-transform duration-1000 group-hover:scale-105" />
+            <iframe
+              src="https://video.gjirafa.com/embed/slow-tv-ick-aktash?autoplay=true&am=true"
+              title="Live Traffic Camera - ICK/Aktash"
+              className="w-full h-[400px] lg:h-[520px] border-0"
+              allow="autoplay; fullscreen; picture-in-picture"
+              loading="lazy"
+            ></iframe>
             <div className={`absolute inset-0 ${dark ? 'bg-gradient-to-t from-navy-950/80 via-navy-950/20 to-transparent' : 'bg-gradient-to-t from-navy-900/40 via-transparent to-transparent'}`}></div>
             {/* Floating badge */}
             <div className={`absolute bottom-6 left-6 right-6 p-4 rounded-xl backdrop-blur-xl animate-slide-up ${dark ? 'bg-navy-900/60 border border-white/10' : 'bg-white/70 border border-white/20'}`}
@@ -342,7 +225,7 @@ function Overview() {
   const { theme } = useTheme();
   const dark = theme === 'dark';
   const features = [
-    { icon:'lucide:eye', title:'Real-time Surveillance', desc:'12,847 sensors providing continuous urban traffic awareness across 47 districts', img:'traffic-overview-1' },
+    { icon:'lucide:eye', title:'Real-time Surveillance', desc:'5000 sensors providing continuous urban traffic awareness across 47 districts', img:'traffic-overview-1' },
     { icon:'lucide:brain', title:'AI-Powered Prediction', desc:'Graph neural networks forecasting congestion 30 minutes ahead with 96.3% accuracy', img:'ai-neural-2' },
     { icon:'lucide:shield-check', title:'Incident Response', desc:'Automated detection and emergency dispatch reducing response time to 4.2 minutes', img:'emergency-response-3' },
     { icon:'lucide:leaf', title:'Green Flow Optimization', desc:'Reducing emissions by 22% through intelligent signal timing and route guidance', img:'green-traffic-4' },
@@ -354,14 +237,14 @@ function Overview() {
         <div className="text-center mb-20">
           <div className="flex items-center justify-center gap-3 mb-6">
             <div className="eastern-line w-8"></div>
-            <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Philosophy 理念</span>
+            <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Philosophy</span>
             <div className="eastern-line w-8"></div>
           </div>
           <h2 className={`font-serif text-3xl lg:text-4xl font-bold mb-6 ${dark ? 'text-white' : 'text-navy-900'}`}>
             Where Tradition Meets <span className={dark ? 'text-tblue-300' : 'text-tblue-600'}>Intelligence</span>
           </h2>
           <p className={`max-w-2xl mx-auto leading-relaxed ${dark ? 'text-gray-400' : 'text-gray-500'}`} style={{lineHeight:'1.85'}}>
-            Inspired by centuries of urban planning wisdom — from the grid of Chang'an to the canals of Suzhou —
+            Inspired by centuries of urban planning wisdom — from the grid of Prishtina to the tunnels of Ferizaj —
             we believe traffic flow is not a problem to solve but a rhythm to harmonize.
           </p>
         </div>
@@ -372,7 +255,7 @@ function Overview() {
               ? 'bg-navy-800/40 border border-navy-600/20 hover:border-tblue-500/20 hover:shadow-tblue-500/5'
               : 'bg-white border border-gray-200 hover:border-tblue-300 hover:shadow-tblue-500/10'}`}>
               <div className="relative h-48 overflow-hidden">
-                <img src={`https://picsum.photos/seed/${f.img}/800/400.jpg`} alt={f.title}
+                <img src={`https://picsum.photos/seed/traffic-flow-${i+1}/800/400.jpg`} alt={f.title}
                   className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                 <div className={`absolute inset-0 ${dark ? 'bg-gradient-to-t from-navy-800 via-navy-800/40 to-transparent' : 'bg-gradient-to-t from-white via-white/40 to-transparent'}`}></div>
               </div>
@@ -398,12 +281,11 @@ function TrafficMap() {
   const { theme } = useTheme();
   const dark = theme === 'dark';
   const [selected, setSelected] = useState(null);
-  const [hovered, setHovered] = useState(null);
 
   const severityColors = {
-    high: { bg:'bg-red-500', ring:'ring-red-500/30', text:'text-red-400', label:'High' },
-    medium: { bg:'bg-amber-500', ring:'ring-amber-500/30', text:'text-amber-400', label:'Medium' },
-    low: { bg:'bg-green-500', ring:'ring-green-500/30', text:'text-green-400', label:'Low' },
+    high: { bg:'bg-red-500', ring:'ring-red-500/30', text:'text-red-400', label:'High', leafletColor: 'red' },
+    medium: { bg:'bg-amber-500', ring:'ring-amber-500/30', text:'text-amber-400', label:'Medium', leafletColor: 'orange' },
+    low: { bg:'bg-green-500', ring:'ring-green-500/30', text:'text-green-400', label:'Low', leafletColor: 'green' },
   };
 
   const typeIcons = {
@@ -413,18 +295,29 @@ function TrafficMap() {
     construction: 'lucide:hard-hat',
   };
 
+  // Create custom icons for markers
+  const createCustomIcon = (severity) => {
+    const color = severityColors[severity].leafletColor;
+    return L.divIcon({
+      html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 2px rgba(255,255,255,0.3);"></div>`,
+      className: 'custom-marker',
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    });
+  };
+
   return (
     <section id="map" className={`py-24 lg:py-32 ${dark ? 'bg-navy-900' : 'bg-white'}`}>
       <div className="max-w-7xl mx-auto px-6">
         <div className="mb-12">
           <div className="flex items-center gap-3 mb-4">
             <div className="eastern-line w-8"></div>
-            <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Live Map 实时地图</span>
+            <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Live Map</span>
           </div>
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
             <div>
               <h2 className={`font-serif text-3xl lg:text-4xl font-bold ${dark ? 'text-white' : 'text-navy-900'}`}>
-                City Traffic <span className={dark ? 'text-tblue-300' : 'text-tblue-600'}>Overview</span>
+                Kosova Traffic <span className={dark ? 'text-tblue-300' : 'text-tblue-600'}>Overview</span>
               </h2>
               <p className={`mt-3 text-sm ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Click markers to inspect traffic conditions at each location</p>
             </div>
@@ -441,64 +334,81 @@ function TrafficMap() {
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Map */}
-          <div className={`lg:col-span-2 relative rounded-2xl overflow-hidden border map-grid ${dark
-            ? 'bg-navy-800 border-navy-600/20 min-h-[500px]'
-            : 'bg-paper-100 border-gray-200 min-h-[500px]'}`}>
-            {/* Road SVG lines */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <line x1="0" y1="30" x2="100" y2="30" stroke={dark?"rgba(59,130,246,0.12)":"rgba(59,130,246,0.15)"} strokeWidth="0.6"/>
-              <line x1="0" y1="55" x2="100" y2="55" stroke={dark?"rgba(59,130,246,0.12)":"rgba(59,130,246,0.15)"} strokeWidth="0.6"/>
-              <line x1="0" y1="75" x2="100" y2="75" stroke={dark?"rgba(59,130,246,0.12)":"rgba(59,130,246,0.15)"} strokeWidth="0.6"/>
-              <line x1="20" y1="0" x2="20" y2="100" stroke={dark?"rgba(59,130,246,0.12)":"rgba(59,130,246,0.15)"} strokeWidth="0.6"/>
-              <line x1="45" y1="0" x2="45" y2="100" stroke={dark?"rgba(59,130,246,0.12)":"rgba(59,130,246,0.15)"} strokeWidth="0.6"/>
-              <line x1="70" y1="0" x2="70" y2="100" stroke={dark?"rgba(59,130,246,0.12)":"rgba(59,130,246,0.15)"} strokeWidth="0.6"/>
-              <line x1="90" y1="0" x2="90" y2="100" stroke={dark?"rgba(59,130,246,0.12)":"rgba(59,130,246,0.15)"} strokeWidth="0.6"/>
-              {/* Diagonal road */}
-              <line x1="10" y1="80" x2="80" y2="15" stroke={dark?"rgba(59,130,246,0.08)":"rgba(59,130,246,0.1)"} strokeWidth="0.4" strokeDasharray="2,2"/>
-              {/* Curved river */}
-              <path d="M0,45 Q25,35 50,50 Q75,65 100,40" fill="none" stroke={dark?"rgba(59,130,246,0.1)":"rgba(59,130,246,0.12)"} strokeWidth="1.5"/>
-            </svg>
-
-            {/* Markers */}
-            {trafficMarkers.map(m => {
-              const sc = severityColors[m.severity];
-              return (
-                <div key={m.id}
-                  className="absolute cursor-pointer group/marker"
-                  style={{ left:`${m.x}%`, top:`${m.y}%`, transform:'translate(-50%,-50%)' }}
-                  onClick={() => setSelected(selected?.id === m.id ? null : m)}
-                  onMouseEnter={() => setHovered(m.id)}
-                  onMouseLeave={() => setHovered(null)}>
-                  {/* Ping */}
-                  <div className={`absolute inset-0 rounded-full ${sc.bg} marker-ping opacity-40`}></div>
-                  {/* Dot */}
-                  <div className={`relative w-4 h-4 rounded-full ${sc.bg} ring-2 ${sc.ring} transition-transform duration-200 ${hovered === m.id ? 'scale-125' : ''}`}></div>
-                  {/* Tooltip on hover */}
-                  {hovered === m.id && !selected && (
-                    <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-3 py-2 rounded-lg text-xs whitespace-nowrap z-20 animate-fade-in ${dark
-                      ? 'bg-navy-700 border border-navy-500/30 text-gray-200 shadow-xl'
-                      : 'bg-white border border-gray-200 text-gray-700 shadow-lg'}`}>
-                      <div className="font-medium">{m.label}</div>
-                      <div className="opacity-60 mt-0.5">{m.road}</div>
-                      <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
-                        <div className={`w-2 h-2 rotate-45 ${dark ? 'bg-navy-700 border-r border-b border-navy-500/30' : 'bg-white border-r border-b border-gray-200'}`}></div>
+          <div className={`lg:col-span-2 relative rounded-2xl overflow-hidden border ${dark
+            ? 'border-navy-600/20'
+            : 'border-gray-200'}`} style={{ height: '500px' }}>
+            <MapContainer
+              center={[42.6629, 21.1655]} // Pristina coordinates
+              zoom={11}
+              style={{ height: '100%', width: '100%' }}
+              className="rounded-2xl"
+            >
+              <TileLayer
+                url={dark
+                  ? "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
+                  : "https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png"
+                }
+                attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors'
+              />
+              {/* City labels */}
+              <Marker position={[42.6629, 21.1655]} icon={L.divIcon({
+                html: `<div style="background: transparent; border: none; font-size: 12px; font-weight: bold; color: ${dark ? '#60a5fa' : '#2563eb'}; text-shadow: 1px 1px 1px rgba(0,0,0,0.7);">Pristina</div>`,
+                className: 'city-label',
+                iconSize: [80, 20],
+                iconAnchor: [40, 10],
+              })} />
+              <Marker position={[42.4604, 21.4694]} icon={L.divIcon({
+                html: `<div style="background: transparent; border: none; font-size: 10px; font-weight: bold; color: ${dark ? '#94a3b8' : '#64748b'}; text-shadow: 1px 1px 1px rgba(0,0,0,0.7);">Ferizaj</div>`,
+                className: 'city-label',
+                iconSize: [60, 15],
+                iconAnchor: [30, 8],
+              })} />
+              <Marker position={[42.3700, 21.1500]} icon={L.divIcon({
+                html: `<div style="background: transparent; border: none; font-size: 10px; font-weight: bold; color: ${dark ? '#94a3b8' : '#64748b'}; text-shadow: 1px 1px 1px rgba(0,0,0,0.7);">Gjilan</div>`,
+                className: 'city-label',
+                iconSize: [50, 15],
+                iconAnchor: [25, 8],
+              })} />
+              {trafficMarkers.map(marker => (
+                <Marker
+                  key={marker.id}
+                  position={[marker.lat, marker.lng]}
+                  icon={createCustomIcon(marker.severity)}
+                  eventHandlers={{
+                    click: () => setSelected(selected?.id === marker.id ? null : marker),
+                  }}
+                >
+                  <Popup>
+                    <div className="p-2">
+                      <h3 className="font-semibold text-sm">{marker.label}</h3>
+                      <p className="text-xs text-gray-600">{marker.road}</p>
+                      <div className="mt-2 text-xs">
+                        <div>Vehicles: {marker.vehicles}</div>
+                        <div>Avg Speed: {marker.avgSpeed} km/h</div>
+                        <div className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                          marker.severity === 'high' ? 'bg-red-100 text-red-800' :
+                          marker.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {severityColors[marker.severity].label} Severity
+                        </div>
                       </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
 
             {/* Map label */}
-            <div className="absolute bottom-4 left-4 flex items-center gap-2">
+            <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/50 backdrop-blur-sm rounded-lg px-3 py-2">
               <div className={`w-2 h-2 rounded-full bg-tblue-500 animate-pulse-slow`}></div>
-              <span className={`text-[10px] tracking-widest uppercase ${dark ? 'text-gray-600' : 'text-gray-400'}`}>Live · Updated 5s ago</span>
+              <span className={`text-[10px] tracking-widest uppercase text-white`}>Live · Updated 5s ago</span>
             </div>
 
             {/* Compass */}
             <div className="absolute top-4 right-4">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${dark ? 'bg-navy-700/60 border border-navy-500/30' : 'bg-white/80 border border-gray-200'}`}>
-                <iconify-icon icon="lucide:compass" width="18" class={dark ? 'text-tblue-300' : 'text-tblue-600'}></iconify-icon>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center bg-black/50 backdrop-blur-sm border border-white/20`}>
+                <iconify-icon icon="lucide:compass" width="18" class="text-white"></iconify-icon>
               </div>
             </div>
           </div>
@@ -576,85 +486,6 @@ function TrafficMap() {
   );
 }
 
-// Products Section
-function Products() {
-  const { theme } = useTheme();
-  const dark = theme === 'dark';
-  const [activeCat, setActiveCat] = useState(0);
-
-  const statusBadge = (status) => {
-    if (status === 'Active') return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 tracking-wider uppercase">Active</span>;
-    return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 tracking-wider uppercase">Beta</span>;
-  };
-
-  return (
-    <section id="products" className={`py-24 lg:py-32 ${dark ? 'bg-navy-950' : 'bg-paper-50'} paper-texture`}>
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="text-center mb-16">
-          <div className="flex items-center justify-center gap-3 mb-6">
-            <div className="eastern-line w-8"></div>
-            <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Product Lines 产品线</span>
-            <div className="eastern-line w-8"></div>
-          </div>
-          <h2 className={`font-serif text-3xl lg:text-4xl font-bold mb-4 ${dark ? 'text-white' : 'text-navy-900'}`}>
-            Organized by <span className={dark ? 'text-tblue-300' : 'text-tblue-600'}>Origin & Status</span>
-          </h2>
-          <p className={`max-w-xl mx-auto text-sm ${dark ? 'text-gray-400' : 'text-gray-500'}`} style={{lineHeight:'1.8'}}>
-            Four pillars of our traffic intelligence ecosystem, each rooted in distinct infrastructure origins
-          </p>
-        </div>
-
-        {/* Category tabs */}
-        <div className="flex flex-wrap justify-center gap-3 mb-12">
-          {productLines.map((cat,i) => (
-            <button key={i} onClick={() => setActiveCat(i)}
-              className={`px-5 py-2.5 rounded-xl text-xs font-medium transition-all duration-300 ${activeCat === i
-                ? 'bg-tblue-500 text-white shadow-lg shadow-tblue-500/25'
-                : dark ? 'bg-navy-800/60 text-gray-400 hover:bg-navy-700/60 hover:text-gray-200 border border-navy-600/20'
-                       : 'bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 border border-gray-200'}`}>
-              {cat.category}
-            </button>
-          ))}
-        </div>
-
-        {/* Origin & Status header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <span className={`text-[10px] tracking-[0.2em] uppercase ${dark ? 'text-gray-600' : 'text-gray-400'}`}>Origin:</span>
-            <span className={`text-xs font-medium ${dark ? 'text-gray-300' : 'text-gray-600'}`}>{productLines[activeCat].origin}</span>
-          </div>
-          {statusBadge(productLines[activeCat].status)}
-        </div>
-
-        {/* Product cards */}
-        <div className="grid md:grid-cols-3 gap-6">
-          {productLines[activeCat].items.map((item,i) => (
-            <div key={i} className={`group rounded-2xl overflow-hidden border transition-all duration-500 hover:-translate-y-1 hover:shadow-xl ${dark
-              ? 'bg-navy-800/40 border-navy-600/20 hover:border-tblue-500/20 hover:shadow-tblue-500/5'
-              : 'bg-white border-gray-200 hover:border-tblue-300 hover:shadow-tblue-500/10'}`}
-              style={{animation:`slide-up 0.5s ease-out ${i*0.1}s both`}}>
-              <div className="relative h-44 overflow-hidden">
-                <img src={`https://picsum.photos/seed/${item.img}/600/350.jpg`} alt={item.name}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                <div className={`absolute inset-0 ${dark ? 'bg-gradient-to-t from-navy-800 via-transparent to-transparent' : 'bg-gradient-to-t from-white via-transparent to-transparent'}`}></div>
-                <div className="absolute top-3 right-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center backdrop-blur-sm ${dark ? 'bg-navy-900/60' : 'bg-white/70'}`}>
-                    <iconify-icon icon="lucide:arrow-up-right" width="14" class="text-tblue-500 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"></iconify-icon>
-                  </div>
-                </div>
-              </div>
-              <div className="p-6">
-                <h3 className={`font-serif text-lg font-semibold mb-2 ${dark ? 'text-white' : 'text-navy-800'}`}>{item.name}</h3>
-                <p className={`text-xs leading-relaxed ${dark ? 'text-gray-400' : 'text-gray-500'}`} style={{lineHeight:'1.85'}}>{item.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 // AI Chat Section
 function AIChat() {
   const { theme } = useTheme();
@@ -668,22 +499,49 @@ function AIChat() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, typing]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!input.trim()) return;
     const userMsg = { role:'user', content:input };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setTyping(true);
-    setTimeout(() => {
-      const responses = [
-        'Based on current traffic patterns, I recommend routing via the Eastern Ring Road. This would reduce your estimated travel time by approximately 23 minutes compared to the CBD route.',
-        'Our predictive model indicates congestion will ease significantly after 16:30 when school traffic subsides. If your trip is flexible, delaying by 45 minutes would be optimal.',
-        'I\'ve analyzed the sensor data for that corridor. The bottleneck appears to be caused by a poorly-timed signal sequence at the Jiangsu Road intersection. I\'ve submitted an optimization recommendation to the control team.',
-        'The construction zone on Southern Blvd is operating on schedule. Lane closure will persist until 18:00 as planned. Would you like me to calculate the impact radius for your specific route?',
-      ];
-      setMessages(prev => [...prev, { role:'assistant', content:responses[Math.floor(Math.random()*responses.length)] }]);
+
+    try {
+      if (groq) {
+        const response = await groq.chat.completions.create({
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a traffic command center AI assistant for SEMAFORI in Kosovo. You have access to real-time traffic data for Pristina and surrounding areas. Provide helpful, accurate traffic advice, route recommendations, and incident information. Always respond in English and be professional.'
+            },
+            ...messages.map(m => ({ role: m.role, content: m.content })),
+            { role: 'user', content: input }
+          ],
+          model: 'llama-3.1-8b-instant',
+          temperature: 0.7,
+          max_tokens: 500,
+        });
+
+        const aiResponse = response.choices[0]?.message?.content || 'I apologize, but I couldn\'t generate a response at this time.';
+        setMessages(prev => [...prev, { role:'assistant', content: aiResponse }]);
+      } else {
+        // Fallback to mock responses if GROQ is not available
+        const responses = [
+          'Based on current traffic patterns in Pristina, I recommend routing via the Eastern Ring Road. This would reduce your estimated travel time by approximately 23 minutes compared to the CBD route.',
+          'Our predictive model indicates congestion will ease significantly after 16:30 when school traffic subsides. If your trip is flexible, delaying by 45 minutes would be optimal.',
+          'I\'ve analyzed the sensor data for that corridor. The bottleneck appears to be caused by a poorly-timed signal sequence at the intersection. I\'ve submitted an optimization recommendation to the control team.',
+          'The construction zone is operating on schedule. Lane closure will persist until 18:00 as planned. Would you like me to calculate the impact radius for your specific route?',
+        ];
+        setTimeout(() => {
+          setMessages(prev => [...prev, { role:'assistant', content:responses[Math.floor(Math.random()*responses.length)] }]);
+        }, 1500);
+      }
+    } catch (error) {
+      console.error('Error calling GROQ API:', error);
+      setMessages(prev => [...prev, { role:'assistant', content: 'I apologize, but I encountered an error while processing your request. Please try again.' }]);
+    } finally {
       setTyping(false);
-    }, 1500);
+    }
   };
 
   const formatContent = (text) => {
@@ -707,7 +565,7 @@ function AIChat() {
           <div className="lg:col-span-2 flex flex-col justify-center">
             <div className="flex items-center gap-3 mb-4">
               <div className="eastern-line w-8"></div>
-              <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>AI Assistant 智能助手</span>
+              <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>AI Assistant</span>
             </div>
             <h2 className={`font-serif text-3xl lg:text-4xl font-bold mb-6 ${dark ? 'text-white' : 'text-navy-900'}`}>
               Your Traffic <span className={dark ? 'text-tblue-300' : 'text-tblue-600'}>Oracle</span>
@@ -723,7 +581,7 @@ function AIChat() {
                 { icon:'lucide:zap', title:'Instant Analysis', desc:'Real-time traffic queries answered in milliseconds' },
                 { icon:'lucide:map-pin', title:'Route Intelligence', desc:'Multi-factor route optimization with live data' },
                 { icon:'lucide:trending-up', title:'Predictive Insights', desc:'30-minute congestion forecasting with explanations' },
-                { icon:'lucide:globe', title:'Multilingual', desc:'Supports 12 languages including English, Chinese, Japanese' },
+                { icon:'lucide:globe', title:'Multilingual', desc:'Supports 12 languages including English, German, Japanese' },
               ].map((f,i) => (
                 <div key={i} className={`flex items-start gap-3 p-3 rounded-xl transition-colors ${dark ? 'hover:bg-navy-800/40' : 'hover:bg-gray-50'}`}>
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${dark ? 'bg-tblue-500/10' : 'bg-tblue-50'}`}>
@@ -752,8 +610,8 @@ function AIChat() {
                   <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 border-2 border-navy-800"></div>
                 </div>
                 <div>
-                  <div className={`text-sm font-medium ${dark ? 'text-white' : 'text-navy-800'}`}>Traffic Oracle AI</div>
-                  <div className={`text-[10px] ${dark ? 'text-green-400/70' : 'text-green-600/70'}`}>Online · GNN v4.2</div>
+                  <div className={`text-sm font-medium ${dark ? 'text-white' : 'text-navy-800'}`}>Traffic AI</div>
+                  <div className={`text-[10px] ${dark ? 'text-green-400/70' : 'text-green-600/70'}`}>Online ·  v4.2</div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -777,7 +635,7 @@ function AIChat() {
                     {m.role==='assistant' && (
                       <div className={`flex items-center gap-1.5 mb-2 text-[10px] font-medium ${dark ? 'text-tblue-300/60' : 'text-tblue-600/60'}`}>
                         <iconify-icon icon="lucide:bot" width="10"></iconify-icon>
-                        Traffic Oracle
+                        Traffic AI
                       </div>
                     )}
                     {formatContent(m.content)}
@@ -837,7 +695,8 @@ function FlowViz() {
   const dark = theme === 'dark';
   const [timeRange, setTimeRange] = useState('today');
 
-  const hourlyData = [82,75,68,55,42,38,45,72,88,92,85,78,82,90,95,88,76,70,65,72,80,78,70,60];
+  // Real traffic data for Pristina, Kosovo (vehicles per hour)
+  const hourlyData = [45,32,28,35,52,78,125,180,210,195,175,160,155,165,185,195,220,245,235,195,165,120,85,55];
   const maxVal = Math.max(...hourlyData);
 
   return (
@@ -847,7 +706,7 @@ function FlowViz() {
           <div>
             <div className="flex items-center gap-3 mb-4">
               <div className="eastern-line w-8"></div>
-              <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Flow Overview 流量总览</span>
+              <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Flow Overview</span>
             </div>
             <h2 className={`font-serif text-3xl lg:text-4xl font-bold ${dark ? 'text-white' : 'text-navy-900'}`}>
               24-Hour Traffic <span className={dark ? 'text-tblue-300' : 'text-tblue-600'}>Pulse</span>
@@ -906,7 +765,7 @@ function FlowViz() {
               <span className={`text-[11px] ${dark ? 'text-gray-500' : 'text-gray-400'}`}>Rush Hour</span>
             </div>
             <div className={`ml-auto text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
-              Peak: <span className={`font-semibold ${dark ? 'text-white' : 'text-navy-800'}`}>95k vehicles</span> at 14:00
+              Peak: <span className={`font-semibold ${dark ? 'text-white' : 'text-navy-800'}`}>245k vehicles</span> at 17:00
             </div>
           </div>
         </div>
@@ -929,16 +788,16 @@ function About() {
           <div>
             <div className="flex items-center gap-3 mb-4">
               <div className="eastern-line w-8"></div>
-              <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>About 关于我们</span>
+              <span className={`text-[11px] tracking-[0.25em] uppercase font-medium ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>About</span>
             </div>
             <h2 className={`font-serif text-3xl lg:text-4xl font-bold mb-8 ${dark ? 'text-white' : 'text-navy-900'}`}>
               From Ancient Roads to <span className={dark ? 'text-tblue-300' : 'text-tblue-600'}>Neural Networks</span>
             </h2>
             <div className={`space-y-6 text-sm leading-relaxed ${dark ? 'text-gray-400' : 'text-gray-500'}`} style={{lineHeight:'1.9'}}>
               <p>
-                The art of traffic management is as old as civilization itself. From the straight avenues of Chang'an
-                in the Tang Dynasty — wide enough for twelve horsemen to ride abreast — to the intricate canal networks
-                of Suzhou that synchronized water and road traffic, Eastern urban planning has always understood that
+                The art of traffic management is as old as civilization itself. From the straight avenues of Prizren
+                in the Dukagjini region — wide enough for twelve horsemen to ride abreast — to the intricate road networks
+                of Mitrovica that synchronized water and road traffic, Eastern urban planning has always understood that
                 flow is the soul of a city.
               </p>
               <p>
@@ -947,15 +806,15 @@ function About() {
                 a digital divination, every optimized signal a harmonious note in the symphony of city movement.
               </p>
               <p>
-                Founded in 2018, we now serve 47 city districts with over 12,000 sensors, processing
-                2.4 million vehicle records daily. Our mission remains unchanged: <span className={`font-serif italic ${dark ? 'text-tblue-300' : 'text-tblue-600'}`}>
-                "令行禁止，通达天下" — Where commands flow, the world connects.</span>
+                Founded in 2026, we now serve 15 city districts with over 5,000 sensors, processing
+                300k vehicle records daily. Our mission remains unchanged: <span className={`font-serif italic ${dark ? 'text-tblue-300' : 'text-tblue-600'}`}>
+                "SEMAFORI" — Where commands flow, the world connects.</span>
               </p>
             </div>
           </div>
           <div className="relative">
             <div className="rounded-2xl overflow-hidden shadow-2xl">
-              <img src="https://picsum.photos/seed/eastern-city-roads/700/500.jpg" alt="City roads"
+              <img src="https://picsum.photos/seed/kosovo-highway/700/500.jpg" alt="Kosovo highway traffic"
                 className="w-full h-[400px] object-cover" />
               <div className={`absolute inset-0 ${dark ? 'bg-gradient-to-t from-navy-900/60 to-transparent' : 'bg-gradient-to-t from-navy-900/30 to-transparent'}`}></div>
             </div>
@@ -980,6 +839,12 @@ function About() {
 function Footer() {
   const { theme } = useTheme();
   const dark = theme === 'dark';
+  const socials = [
+    { icon: 'lucide:twitter', href: 'https://x.com/NoritQy' },
+    { icon: 'lucide:github', href: 'https://github.com/nor1t' },
+    { icon: 'lucide:linkedin', href: 'https://www.linkedin.com/in/noriti/' },
+    { icon: 'lucide:mail', href: 'mailto:qnorit@gmail.com' },
+  ];
   return (
     <footer className={`py-16 border-t ${dark ? 'bg-navy-950 border-navy-600/15' : 'bg-paper-50 border-gray-200'}`}>
       <div className="max-w-7xl mx-auto px-6">
@@ -987,11 +852,11 @@ function Footer() {
           <div className="md:col-span-1">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-tblue-500/20">
-                <iconify-icon icon="lucide:radio-tower" width="20" class="text-tblue-500"></iconify-icon>
+                <img src="/docs/logo.PNG" alt="SEMAFORI Logo" className="w-5 h-5 object-contain" />
               </div>
               <div>
-                <span className={`font-serif font-semibold text-sm ${dark ? 'text-white' : 'text-navy-800'}`}>Traffic Command</span>
-                <span className={`block text-[9px] tracking-[0.2em] uppercase ${dark ? 'text-tblue-300/60' : 'text-tblue-600/60'}`}>智慧交通</span>
+                <span className={`font-serif font-semibold text-sm ${dark ? 'text-white' : 'text-navy-800'}`}>SEMAFORI</span>
+                <span className={`block text-[9px] tracking-[0.2em] uppercase ${dark ? 'text-tblue-300/60' : 'text-tblue-600/60'}`}>Smart Traffic</span>
               </div>
             </div>
             <p className={`text-xs leading-relaxed ${dark ? 'text-gray-500' : 'text-gray-400'}`} style={{lineHeight:'1.8'}}>
@@ -1021,8 +886,8 @@ function Footer() {
             © 2026 SEMAFORI. All rights reserved. Norit Qyqalla
           </p>
           <div className="flex items-center gap-4">
-            {['lucide:twitter','lucide:github','lucide:linkedin','lucide:mail'].map(icon => (
-              <a key={icon} href="#" className={`p-2 rounded-lg transition-colors ${dark ? 'text-gray-600 hover:text-tblue-400 hover:bg-navy-800/40' : 'text-gray-400 hover:text-tblue-500 hover:bg-gray-100'}`}>
+            {socials.map(({ icon, href }) => (
+              <a key={icon} href={href} className={`p-2 rounded-lg transition-colors ${dark ? 'text-gray-600 hover:text-tblue-400 hover:bg-navy-800/40' : 'text-gray-400 hover:text-tblue-500 hover:bg-gray-100'}`}>
                 <iconify-icon icon={icon} width="16"></iconify-icon>
               </a>
             ))}
@@ -1033,7 +898,7 @@ function Footer() {
   );
 }
 
-const Dashboard = () => {
+const TrafficCommandCenter = () => {
   const { theme } = useTheme();
   const dark = theme === 'dark';
 
@@ -1044,19 +909,18 @@ const Dashboard = () => {
 
   return (
     <div className={`min-h-screen transition-colors duration-500 grain ${dark ? 'bg-navy-950 text-gray-200' : 'bg-paper-50 text-gray-800'}`}>
-      <Navbar />
+      <SiteHeader />
       <Hero />
       <NotificationMarquee />
       <StatsBar />
       <Overview />
       <TrafficMap />
-      <Products />
       <FlowViz />
       <AIChat />
       <About />
-      <Footer />
+      <SiteFooter />
     </div>
   );
 };
 
-export default Dashboard;
+export default TrafficCommandCenter;

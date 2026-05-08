@@ -1,54 +1,76 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../services/supabaseClient';
-import Header from '../components/Header';
+import SiteHeader from '../components/SiteHeader';
+import SiteFooter from '../components/SiteFooter';
+
+const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=512&q=80';
+
+const emptyProfile = {
+  full_name: '',
+  email: '',
+  phone: '',
+  department: '',
+  role: 'Officer',
+  avatar_url: '',
+};
+
+const roleOptions = [
+  { value: 'Officer', label: 'Traffic Officer' },
+  { value: 'Supervisor', label: 'Supervisor' },
+  { value: 'Manager', label: 'Manager' },
+  { value: 'Admin', label: 'Administrator' },
+];
 
 const Profile = () => {
   const { user, loading } = useAuth();
-  const navigate = useNavigate();
-  const [profileData, setProfileData] = useState({
-    full_name: '',
-    email: '',
-    phone: '',
-    department: '',
-    role: '',
-  });
-  const [isEditing, setIsEditing] = useState(false);
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
+
+  const [profileData, setProfileData] = useState(emptyProfile);
+  const [initialProfileData, setInitialProfileData] = useState(emptyProfile);
+  const [avatarPreview, setAvatarPreview] = useState(DEFAULT_AVATAR);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ text: '', type: '' });
   const [stats, setStats] = useState({ totalReports: 0, activeReports: 0, resolvedReports: 0 });
 
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate('/login');
-    }
-  }, [loading, user, navigate]);
-
-  useEffect(() => {
-    if (user) {
-      loadProfile();
-      loadStats();
-    }
-  }, [user, loadProfile, loadStats]);
-
   const loadProfile = useCallback(async () => {
+    if (!user) return;
+
     try {
-      // Load profile data from user metadata or a profiles table
-      const profile = {
-        full_name: user.user_metadata?.full_name || '',
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error('Error fetching profile row:', profileError);
+      }
+
+      const nextProfile = {
+        full_name: profile?.full_name || user.user_metadata?.full_name || '',
         email: user.email || '',
-        phone: user.user_metadata?.phone || '',
-        department: user.user_metadata?.department || '',
-        role: user.user_metadata?.role || 'Officer',
+        phone: profile?.phone || user.user_metadata?.phone || '',
+        department: profile?.department || user.user_metadata?.department || '',
+        role: profile?.role || user.user_metadata?.role || 'Officer',
+        avatar_url: profile?.avatar_url || user.user_metadata?.avatar_url || DEFAULT_AVATAR,
       };
-      setProfileData(profile);
+
+      setProfileData(nextProfile);
+      setInitialProfileData(nextProfile);
+      setAvatarPreview(nextProfile.avatar_url);
     } catch (err) {
       console.error('Error loading profile:', err);
     }
   }, [user]);
 
   const loadStats = useCallback(async () => {
+    if (!user) return;
+
     try {
       const { data, error } = await supabase
         .from('user_data')
@@ -57,9 +79,10 @@ const Profile = () => {
 
       if (error) throw error;
 
-      const totalReports = data.length;
-      const activeReports = data.filter(item => item.status === 'active').length;
-      const resolvedReports = data.filter(item => item.status === 'cleared').length;
+      const rows = data ?? [];
+      const totalReports = rows.length;
+      const activeReports = rows.filter((item) => item.status === 'active').length;
+      const resolvedReports = rows.filter((item) => item.status === 'cleared').length;
 
       setStats({ totalReports, activeReports, resolvedReports });
     } catch (err) {
@@ -67,24 +90,85 @@ const Profile = () => {
     }
   }, [user]);
 
-  const handleSave = async () => {
-    setSaving(true);
+  useEffect(() => {
+    if (user) {
+      loadProfile();
+      loadStats();
+    }
+  }, [user, loadProfile, loadStats]);
+
+  useEffect(() => {
+    document.body.style.background = dark ? '#040810' : '#faf9f5';
+    document.body.style.color = dark ? '#e5e5e5' : '#1a1a1a';
+  }, [dark]);
+
+  const handleAvatarChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !user) return;
+
+    setAvatarUploading(true);
+    const filePath = `avatars/${user.id}/${Date.now()}_${file.name}`;
+
     try {
-      // Update user metadata in Supabase
-      const { error } = await supabase.auth.updateUser({
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicData } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicData.publicUrl;
+      setProfileData((prev) => ({ ...prev, avatar_url: publicUrl }));
+      setAvatarPreview(publicUrl);
+      setMessage({ text: 'Profile picture uploaded successfully.', type: 'success' });
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      setMessage({ text: 'Failed to upload avatar. Check your storage settings.', type: 'error' });
+    } finally {
+      setAvatarUploading(false);
+      window.setTimeout(() => setMessage({ text: '', type: '' }), 3500);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user) return;
+    setSaving(true);
+
+    try {
+      const updatedProfile = {
+        user_id: user.id,
+        full_name: profileData.full_name,
+        phone: profileData.phone,
+        department: profileData.department,
+        role: profileData.role,
+        avatar_url: profileData.avatar_url,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: upsertError } = await supabase
+        .from('profiles')
+        .upsert(updatedProfile, { onConflict: 'user_id' });
+
+      if (upsertError) throw upsertError;
+
+      const { error: authError } = await supabase.auth.updateUser({
         data: {
           full_name: profileData.full_name,
           phone: profileData.phone,
           department: profileData.department,
           role: profileData.role,
-        }
+          avatar_url: profileData.avatar_url,
+        },
       });
 
-      if (error) throw error;
+      if (authError) throw authError;
 
+      setInitialProfileData(profileData);
       setMessage({ text: 'Profile updated successfully!', type: 'success' });
-      setIsEditing(false);
-      setTimeout(() => setMessage({ text: '', type: '' }), 3000);
+      window.setTimeout(() => setMessage({ text: '', type: '' }), 3000);
     } catch (err) {
       console.error('Error updating profile:', err);
       setMessage({ text: 'Failed to update profile.', type: 'error' });
@@ -93,186 +177,267 @@ const Profile = () => {
     }
   };
 
+  const handleCancel = () => {
+    setProfileData(initialProfileData);
+    setAvatarPreview(initialProfileData.avatar_url || DEFAULT_AVATAR);
+    setMessage({ text: '', type: '' });
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+      <div className={`grain flex min-h-screen items-center justify-center transition-colors duration-500 ${dark ? 'bg-navy-950 text-gray-200' : 'bg-paper-50 text-gray-800'}`}>
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-tblue-500"></div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <Header />
+  const isGuest = !user;
+  const completionFields = [
+    profileData.full_name,
+    profileData.email,
+    profileData.phone,
+    profileData.department,
+    profileData.role,
+    profileData.avatar_url,
+  ];
+  const completion = Math.round((completionFields.filter(Boolean).length / completionFields.length) * 100);
+  const hasChanges = Object.keys(profileData).some((key) => profileData[key] !== initialProfileData[key]);
 
-      <main className="mx-auto max-w-4xl px-4 py-8 pt-24 sm:px-6 lg:px-8">
+  const panelClass = dark ? 'border-navy-600/20 bg-navy-900/60' : 'border-gray-200/80 bg-white/90';
+  const secondaryPanelClass = dark ? 'border-slate-800/80 bg-slate-900/80' : 'border-gray-200 bg-white/85';
+  const labelClass = dark ? 'text-slate-200' : 'text-slate-700';
+  const textMutedClass = dark ? 'text-gray-400' : 'text-gray-500';
+  const inputClass = dark
+    ? 'border-slate-700/80 bg-slate-950/90 text-slate-100 focus:border-cyan-400'
+    : 'border-slate-200 bg-white text-slate-800 focus:border-tblue-500';
+  const readonlyInputClass = dark
+    ? 'border-slate-700/80 bg-slate-900/80 text-slate-400'
+    : 'border-slate-200 bg-slate-50 text-slate-500';
+  const ghostButtonClass = dark
+    ? 'border-slate-700/90 bg-slate-950/80 text-slate-200 hover:bg-slate-900'
+    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
+  const messageClass = message.type === 'error'
+    ? dark
+      ? 'border-red-500/30 bg-red-500/10 text-red-200'
+      : 'border-red-200 bg-red-50 text-red-700'
+    : dark
+      ? 'border-green-500/30 bg-green-500/10 text-green-200'
+      : 'border-green-200 bg-green-50 text-green-700';
+
+  return (
+    <div className={`grain min-h-screen transition-colors duration-500 ${dark ? 'bg-navy-950 text-gray-200' : 'bg-paper-50 text-gray-800'}`}>
+      <SiteHeader />
+
+      <main className="mx-auto max-w-6xl px-4 pb-16 pt-28 sm:px-6 lg:px-8">
         {message.text && (
-          <div className={`mb-6 rounded-3xl border px-5 py-4 text-sm shadow-xl ${
-            message.type === 'error'
-              ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
-              : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-          }`}>
+          <div className={`mb-6 rounded-3xl border px-5 py-4 text-sm shadow-xl ${messageClass}`}>
             {message.text}
           </div>
         )}
 
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* Profile Card */}
-          <div className="lg:col-span-2">
-            <div className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-semibold text-white">Profile Information</h2>
-                {!isEditing ? (
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="rounded-full bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400"
+        {isGuest ? (
+          <div className={`rounded-3xl border p-10 shadow-2xl backdrop-blur-xl ${panelClass}`}>
+            <div className="grid gap-8 lg:grid-cols-2">
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="eastern-line w-10"></div>
+                  <span className={`text-[11px] uppercase tracking-[0.25em] ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Profile Access</span>
+                </div>
+                <h1 className={`font-serif text-3xl font-bold ${dark ? 'text-white' : 'text-navy-900'}`}>Access Your Command Profile</h1>
+                <p className={`max-w-xl text-sm leading-relaxed ${textMutedClass}`} style={{ lineHeight: '1.85' }}>
+                  Sign in or create an account to manage your traffic command profile, update your personal details, and keep your dashboard identity in sync.
+                </p>
+                <div className="flex flex-wrap gap-4 pt-4">
+                  <Link to="/login" className="rounded-2xl bg-tblue-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-tblue-600">
+                    Login
+                  </Link>
+                  <Link
+                    to="/signup"
+                    className={`rounded-2xl border px-6 py-3 text-sm font-semibold transition ${dark ? 'border-tblue-500/30 text-tblue-300 hover:bg-tblue-500/10' : 'border-tblue-500/20 text-tblue-600 hover:bg-tblue-50'}`}
                   >
-                    Edit Profile
+                    Sign Up
+                  </Link>
+                </div>
+              </div>
+
+              <div className={`rounded-3xl border border-dashed p-6 text-center ${dark ? 'border-tblue-500/30 bg-slate-950/30' : 'border-tblue-500/20 bg-tblue-50/60'}`}>
+                <div className={`mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full text-4xl ${dark ? 'bg-tblue-500/10 text-tblue-300' : 'bg-tblue-500/10 text-tblue-500'}`}>
+                  👤
+                </div>
+                <p className={`text-sm ${textMutedClass}`}>
+                  Secure access keeps your profile, role details, and command activity connected to the right account.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-8 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <div className={`rounded-3xl border p-8 shadow-xl backdrop-blur-xl ${panelClass}`}>
+                <div className="flex flex-col gap-6 border-b border-white/10 pb-8 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className={`relative h-28 w-28 overflow-hidden rounded-[2rem] border ${dark ? 'border-slate-700/50 bg-slate-900' : 'border-slate-200 bg-slate-100'}`}>
+                      <img src={avatarPreview} alt="Profile avatar" className="h-full w-full object-cover" />
+                    </div>
+                    <div>
+                      <p className={`text-sm uppercase tracking-[0.25em] ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Command Profile</p>
+                      <p className={`mt-1 text-2xl font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>{profileData.full_name || 'Traffic Operator'}</p>
+                      <p className={`mt-2 text-sm ${textMutedClass}`}>{profileData.role || 'Officer'}{profileData.department ? ` • ${profileData.department}` : ''}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 lg:max-w-xs lg:text-right">
+                    <p className={`text-xs uppercase tracking-[0.3em] ${dark ? 'text-gray-500' : 'text-gray-400'}`}>Profile completeness</p>
+                    <div className={`rounded-full p-1 ${dark ? 'bg-slate-800/80' : 'bg-slate-100'}`}>
+                      <div className="h-2 rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 transition-all duration-300" style={{ width: `${completion}%` }} />
+                    </div>
+                    <p className={`text-sm ${textMutedClass}`}>{completion}% complete</p>
+                  </div>
+                </div>
+
+                <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Upload Avatar</label>
+                    <label className={`flex cursor-pointer items-center justify-center rounded-2xl border border-dashed px-4 py-4 text-sm transition ${dark ? 'border-slate-600/70 bg-slate-950/80 text-slate-300 hover:border-cyan-400 hover:text-white' : 'border-slate-300 bg-slate-50 text-slate-600 hover:border-tblue-500 hover:bg-white hover:text-slate-800'}`}>
+                      <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+                      {avatarUploading ? 'Uploading...' : 'Choose a photo'}
+                    </label>
+                  </div>
+                  <div>
+                    <p className={`mb-2 text-sm font-medium ${labelClass}`}>Image preview</p>
+                    <div className={`rounded-3xl border p-4 ${dark ? 'border-slate-700/60 bg-slate-950/80' : 'border-slate-200 bg-slate-50'}`}>
+                      <img src={avatarPreview} alt="Avatar preview" className="h-36 w-full rounded-3xl object-cover" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Full Name</label>
+                    <input
+                      type="text"
+                      value={profileData.full_name}
+                      onChange={(event) => setProfileData({ ...profileData, full_name: event.target.value })}
+                      className={`w-full rounded-3xl border px-4 py-3 outline-none transition ${inputClass}`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Email</label>
+                    <input
+                      type="email"
+                      value={profileData.email}
+                      disabled
+                      className={`w-full rounded-3xl border px-4 py-3 outline-none ${readonlyInputClass}`}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Phone</label>
+                    <input
+                      type="tel"
+                      value={profileData.phone}
+                      onChange={(event) => setProfileData({ ...profileData, phone: event.target.value })}
+                      className={`w-full rounded-3xl border px-4 py-3 outline-none transition ${inputClass}`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Department</label>
+                    <input
+                      type="text"
+                      value={profileData.department}
+                      onChange={(event) => setProfileData({ ...profileData, department: event.target.value })}
+                      className={`w-full rounded-3xl border px-4 py-3 outline-none transition ${inputClass}`}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Role</label>
+                  <select
+                    value={profileData.role}
+                    onChange={(event) => setProfileData({ ...profileData, role: event.target.value })}
+                    className={`w-full rounded-3xl border px-4 py-3 outline-none transition ${inputClass}`}
+                  >
+                    {roleOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving || !hasChanges}
+                    className="flex-1 rounded-3xl bg-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {saving ? 'Saving changes...' : 'Save profile'}
                   </button>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setIsEditing(false)}
-                      className="rounded-full bg-slate-800 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSave}
-                      disabled={saving}
-                      className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-70"
-                    >
-                      {saving ? 'Saving...' : 'Save Changes'}
-                    </button>
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    disabled={!hasChanges}
+                    className={`flex-1 rounded-3xl border px-6 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${ghostButtonClass}`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className={`rounded-3xl border p-6 shadow-xl backdrop-blur-xl ${secondaryPanelClass}`}>
+                <h3 className={`mb-4 text-lg font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>Insights</h3>
+                <div className={`space-y-4 text-sm ${textMutedClass}`}>
+                  <div className="flex items-center justify-between">
+                    <span>Total Reports</span>
+                    <span className={`font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>{stats.totalReports}</span>
                   </div>
-                )}
+                  <div className="flex items-center justify-between">
+                    <span>Active Incidents</span>
+                    <span className="font-semibold text-cyan-400">{stats.activeReports}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Resolved Cases</span>
+                    <span className="font-semibold text-emerald-400">{stats.resolvedReports}</span>
+                  </div>
+                  <div className={`rounded-2xl border p-4 ${dark ? 'border-white/5 bg-white/5' : 'border-slate-100 bg-slate-50'}`}>
+                    <span className={`block text-xs uppercase tracking-[0.3em] ${dark ? 'text-slate-500' : 'text-slate-400'}`}>Account ID</span>
+                    <p className={`mt-2 break-all text-sm ${dark ? 'text-slate-300' : 'text-slate-600'}`}>{user.id}</p>
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-200 mb-1">Full Name</label>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={profileData.full_name}
-                        onChange={(e) => setProfileData({ ...profileData, full_name: e.target.value })}
-                        className="w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
-                      />
-                    ) : (
-                      <p className="rounded-2xl bg-slate-950/80 px-4 py-3 text-slate-300">{profileData.full_name || 'Not set'}</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-200 mb-1">Email</label>
-                    <p className="rounded-2xl bg-slate-950/80 px-4 py-3 text-slate-400">{profileData.email}</p>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-200 mb-1">Phone</label>
-                    {isEditing ? (
-                      <input
-                        type="tel"
-                        value={profileData.phone}
-                        onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
-                        className="w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
-                        placeholder="Enter phone number"
-                      />
-                    ) : (
-                      <p className="rounded-2xl bg-slate-950/80 px-4 py-3 text-slate-300">{profileData.phone || 'Not set'}</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-200 mb-1">Department</label>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={profileData.department}
-                        onChange={(e) => setProfileData({ ...profileData, department: e.target.value })}
-                        className="w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
-                        placeholder="e.g., Traffic Control"
-                      />
-                    ) : (
-                      <p className="rounded-2xl bg-slate-950/80 px-4 py-3 text-slate-300">{profileData.department || 'Not set'}</p>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-200 mb-1">Role</label>
-                  {isEditing ? (
-                    <select
-                      value={profileData.role}
-                      onChange={(e) => setProfileData({ ...profileData, role: e.target.value })}
-                      className="w-full rounded-2xl border border-slate-700/80 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
-                    >
-                      <option value="Officer">Traffic Officer</option>
-                      <option value="Supervisor">Supervisor</option>
-                      <option value="Manager">Manager</option>
-                      <option value="Admin">Administrator</option>
-                    </select>
-                  ) : (
-                    <p className="rounded-2xl bg-slate-950/80 px-4 py-3 text-slate-300">{profileData.role}</p>
-                  )}
+              <div className={`rounded-3xl border p-6 shadow-xl backdrop-blur-xl ${secondaryPanelClass}`}>
+                <h3 className={`mb-4 text-lg font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>Quick Access</h3>
+                <div className="space-y-3">
+                  <Link
+                    to="/dashboard"
+                    className={`block rounded-2xl border px-4 py-3 text-sm font-medium transition ${dark ? 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10' : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'}`}
+                  >
+                    Return to dashboard
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      loadProfile();
+                      loadStats();
+                    }}
+                    className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-medium transition ${dark ? 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10' : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'}`}
+                  >
+                    Refresh profile data
+                  </button>
                 </div>
               </div>
             </div>
           </div>
-
-          {/* Stats and Quick Actions */}
-          <div className="space-y-6">
-            {/* Stats Cards */}
-            <div className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
-              <h3 className="text-lg font-semibold text-white mb-4">Your Statistics</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-300">Total Reports</span>
-                  <span className="text-2xl font-semibold text-white">{stats.totalReports}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-300">Active Incidents</span>
-                  <span className="text-2xl font-semibold text-cyan-300">{stats.activeReports}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-300">Resolved Cases</span>
-                  <span className="text-2xl font-semibold text-emerald-300">{stats.resolvedReports}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
-              <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
-              <div className="space-y-3">
-                <button
-                  onClick={() => navigate('/dashboard')}
-                  className="w-full rounded-2xl bg-slate-800/70 px-4 py-3 text-left text-slate-200 transition hover:bg-slate-700"
-                >
-                  📊 View Dashboard
-                </button>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="w-full rounded-2xl bg-slate-800/70 px-4 py-3 text-left text-slate-200 transition hover:bg-slate-700"
-                >
-                  🔄 Refresh Data
-                </button>
-              </div>
-            </div>
-
-            {/* Account Info */}
-            <div className="rounded-3xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl">
-              <h3 className="text-lg font-semibold text-white mb-4">Account Details</h3>
-              <div className="space-y-2 text-sm text-slate-400">
-                <p>Member since: {new Date(user?.created_at).toLocaleDateString()}</p>
-                <p>Last sign in: {new Date(user?.last_sign_in_at).toLocaleDateString()}</p>
-                <p>User ID: {user?.id?.slice(0, 8)}...</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
       </main>
+
+      <SiteFooter />
     </div>
   );
 };

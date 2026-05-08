@@ -115,6 +115,16 @@ const Header = ({ reports = [] }) => {
             >
               {t('dashboard')}
             </Link>
+            <Link
+              to="/profile"
+              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                isActive('/profile')
+                  ? 'bg-cyan-500 text-slate-950'
+                  : 'text-gray-600 hover:bg-gray-100/70 hover:text-gray-900 dark:text-slate-300 dark:hover:bg-slate-800/70 dark:hover:text-white'
+              }`}
+            >
+              Profile
+            </Link>
           </nav>
 
           <div className="flex items-center gap-3">
@@ -282,6 +292,16 @@ const Header = ({ reports = [] }) => {
               }`}
             >
               {t('dashboard')}
+            </Link>
+            <Link
+              to="/profile"
+              className={`flex-1 px-4 py-3 text-center text-sm font-medium transition ${
+                isActive('/profile')
+                  ? 'bg-cyan-500 text-slate-950'
+                  : 'text-gray-600 hover:bg-gray-100/70 hover:text-gray-900 dark:text-slate-300 dark:hover:bg-slate-800/70 dark:hover:text-white'
+              }`}
+            >
+              Profile
             </Link>
           </nav>
         </div>

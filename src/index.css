@@ -20,12 +20,56 @@
   body:not(.dark) {
     @apply bg-gradient-to-br from-blue-50 via-white to-blue-50 text-gray-900;
   }
+
+  * { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
 }
 
 @layer components {
   .input-focus-ring {
     @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2;
   }
+
+  .paper-texture {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  }
+
+  .grain::after {
+    content:''; position:fixed; inset:0; z-index:9999; pointer-events:none; opacity:0.02;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+  }
+
+  .map-grid {
+    background-image:
+      linear-gradient(rgba(59,130,246,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,130,246,0.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .dark .map-grid {
+    background-image:
+      linear-gradient(rgba(59,130,246,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,130,246,0.08) 1px, transparent 1px);
+  }
+
+  .chat-scroll::-webkit-scrollbar { width: 4px; }
+  .chat-scroll::-webkit-scrollbar-track { background: transparent; }
+  .chat-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+  @keyframes markerPing {
+    0% { transform:scale(1); opacity:0.8; }
+    100% { transform:scale(2.5); opacity:0; }
+  }
+
+  .marker-ping { animation: markerPing 2s ease-out infinite; }
+
+  .serif-italic { font-family: 'Noto Serif', serif; font-style: italic; }
+
+  .eastern-line {
+    background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+    height: 1px;
+  }
+
+  .dark .eastern-line { background: linear-gradient(90deg, transparent, #60a5fa, transparent); }
 }
 /* Sfondi i përbashkët për të gjitha faqet */
 .bg-space {
