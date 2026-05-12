@@ -24,6 +24,27 @@ const roleOptions = [
   { value: 'Admin', label: 'Administrator' },
 ];
 
+const getErrorDetails = (error) => `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+
+const canFallbackToAuthMetadata = (error) => {
+  const details = getErrorDetails(error);
+
+  return (
+    error?.code === 'PGRST205' ||
+    error?.code === '42P01' ||
+    error?.code === '42501' ||
+    error?.status === 401 ||
+    error?.status === 403 ||
+    details.includes('profiles') ||
+    details.includes('row-level security') ||
+    details.includes('permission denied') ||
+    details.includes('not allowed') ||
+    details.includes('relation') ||
+    details.includes('does not exist') ||
+    details.includes('could not find the table')
+  );
+};
+
 const Profile = () => {
   const { user, loading } = useAuth();
   const { theme } = useTheme();
@@ -47,7 +68,7 @@ const Profile = () => {
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (profileError) {
+      if (profileError && !canFallbackToAuthMetadata(profileError)) {
         console.error('Error fetching profile row:', profileError);
       }
 
@@ -102,6 +123,29 @@ const Profile = () => {
     document.body.style.color = dark ? '#e5e5e5' : '#1a1a1a';
   }, [dark]);
 
+  const upsertProfileRecord = useCallback(async (profilePatch) => {
+    const { error } = await supabase
+      .from('profiles')
+      .upsert(profilePatch, { onConflict: 'user_id' });
+
+    if (!error) return true;
+
+    if (canFallbackToAuthMetadata(error)) {
+      console.warn('Profiles table is unavailable, falling back to auth metadata.', error);
+      return false;
+    }
+
+    throw error;
+  }, []);
+
+  const updateAuthMetadata = useCallback(async (profilePatch) => {
+    const { error } = await supabase.auth.updateUser({
+      data: profilePatch,
+    });
+
+    if (error) throw error;
+  }, []);
+
   const handleAvatarChange = async (event) => {
     const file = event.target.files?.[0];
     if (!file || !user) return;
@@ -121,9 +165,20 @@ const Profile = () => {
         .getPublicUrl(filePath);
 
       const publicUrl = publicData.publicUrl;
+
+    // ── Persist the new avatar_url to the profiles table immediately ──
+      await upsertProfileRecord({
+        user_id: user.id,
+        avatar_url: publicUrl,
+        updated_at: new Date().toISOString(),
+      });
+
+      await updateAuthMetadata({ avatar_url: publicUrl });
+
       setProfileData((prev) => ({ ...prev, avatar_url: publicUrl }));
+      setInitialProfileData((prev) => ({ ...prev, avatar_url: publicUrl }));
       setAvatarPreview(publicUrl);
-      setMessage({ text: 'Profile picture uploaded successfully.', type: 'success' });
+      setMessage({ text: 'Profile picture updated successfully.', type: 'success' });
     } catch (error) {
       console.error('Error uploading avatar:', error);
       setMessage({ text: 'Failed to upload avatar. Check your storage settings.', type: 'error' });
@@ -148,23 +203,14 @@ const Profile = () => {
         updated_at: new Date().toISOString(),
       };
 
-      const { error: upsertError } = await supabase
-        .from('profiles')
-        .upsert(updatedProfile, { onConflict: 'user_id' });
-
-      if (upsertError) throw upsertError;
-
-      const { error: authError } = await supabase.auth.updateUser({
-        data: {
-          full_name: profileData.full_name,
-          phone: profileData.phone,
-          department: profileData.department,
-          role: profileData.role,
-          avatar_url: profileData.avatar_url,
-        },
+      await upsertProfileRecord(updatedProfile);
+      await updateAuthMetadata({
+        full_name: profileData.full_name,
+        phone: profileData.phone,
+        department: profileData.department,
+        role: profileData.role,
+        avatar_url: profileData.avatar_url,
       });
-
-      if (authError) throw authError;
 
       setInitialProfileData(profileData);
       setMessage({ text: 'Profile updated successfully!', type: 'success' });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
@@ -9,6 +9,8 @@ const dashboardLinks = [
   { label: 'AI Assistant', to: '/dashboard#ai', hash: '#ai' },
   { label: 'About', to: '/dashboard#about', hash: '#about' },
 ];
+
+const HEADER_SCROLL_OFFSET = 96;
 
 function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
@@ -56,6 +58,17 @@ const SiteHeader = () => {
 
   const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/traffic-command-center';
 
+  const scrollToHash = useCallback((hash, behavior = 'smooth') => {
+    if (!hash) return false;
+
+    const section = document.querySelector(hash);
+    if (!section) return false;
+
+    const top = section.getBoundingClientRect().top + window.scrollY - HEADER_SCROLL_OFFSET;
+    window.scrollTo({ top: Math.max(top, 0), behavior });
+    return true;
+  }, []);
+
   const isLinkActive = (hash) => {
     if (!isDashboardRoute) return false;
     if (hash === '#overview') {
@@ -63,6 +76,16 @@ const SiteHeader = () => {
     }
     return location.hash === hash;
   };
+
+  useEffect(() => {
+    if (!isDashboardRoute || !location.hash) return undefined;
+
+    const frameId = window.requestAnimationFrame(() => {
+      scrollToHash(location.hash);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isDashboardRoute, location.hash, scrollToHash]);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -72,6 +95,23 @@ const SiteHeader = () => {
     } finally {
       setLoggingOut(false);
     }
+  };
+
+  const handleDashboardNavigation = (event, hash) => {
+    event.preventDefault();
+
+    if (!hash) return;
+
+    if (!isDashboardRoute) {
+      navigate(`/dashboard${hash}`);
+      return;
+    }
+
+    if (location.pathname !== '/dashboard' || location.hash !== hash) {
+      navigate(`/dashboard${hash}`);
+    }
+
+    scrollToHash(hash);
   };
 
   const shellClass = scrolled
@@ -104,6 +144,7 @@ const SiteHeader = () => {
             <Link
               key={link.hash}
               to={link.to}
+              onClick={(event) => handleDashboardNavigation(event, link.hash)}
               className={`text-[13px] tracking-wide transition-colors duration-200 ${isLinkActive(link.hash) ? activeClass : navTextClass}`}
             >
               {link.label}
@@ -158,6 +199,7 @@ const SiteHeader = () => {
               <Link
                 key={link.hash}
                 to={link.to}
+                onClick={(event) => handleDashboardNavigation(event, link.hash)}
                 className={`py-2 text-sm transition-colors ${isLinkActive(link.hash) ? activeClass : dark ? 'text-gray-300 hover:text-tblue-400' : 'text-gray-600 hover:text-tblue-600'}`}
               >
                 {link.label}
