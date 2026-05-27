@@ -4,9 +4,10 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
 
 const dashboardLinks = [
-  { label: 'Overview', to: '/dashboard#overview', hash: '#overview' },
+  { label: 'Camera', to: '/dashboard#video', hash: '#video' },
+  { label: 'AI Chat', to: '/dashboard#ai', hash: '#ai' },
   { label: 'Live Map', to: '/dashboard#map', hash: '#map' },
-  { label: 'AI Assistant', to: '/dashboard#ai', hash: '#ai' },
+  { label: 'Philosophy', to: '/dashboard#overview', hash: '#overview' },
   { label: 'About', to: '/dashboard#about', hash: '#about' },
 ];
 
@@ -71,8 +72,8 @@ const SiteHeader = () => {
 
   const isLinkActive = (hash) => {
     if (!isDashboardRoute) return false;
-    if (hash === '#overview') {
-      return !location.hash || location.hash === '#overview';
+    if (hash === '#video') {
+      return !location.hash || location.hash === '#video';
     }
     return location.hash === hash;
   };

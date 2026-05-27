@@ -5,6 +5,7 @@ Sistem për menaxhimin e incidenteve në trafik, i ndërtuar me React, Supabase,
 **Live URL:** https://semafori.vercel.app  
 **Statusi:** URL u verifikua më 5 maj 2026  
 **Dokumenti i prezantimit:** [docs/demo-plan.md](./docs/demo-plan.md)
+**Dokumentimi final i projektit:** [docs/FINAL_PROJECT_DOCUMENTATION.md](./docs/FINAL_PROJECT_DOCUMENTATION.md)
 
 ## Çfarë bën projekti
 
