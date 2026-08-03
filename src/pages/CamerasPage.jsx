@@ -1,175 +1,188 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '../services/supabaseClient';
+import React, { useEffect, useState } from 'react';
 import { CAMERA_FEEDS, CAMERA_LOCATIONS, getLoadColor } from '../shared/trafficData';
 import { snapshotUrl } from '../shared/snapshots';
 import usePipelineHealth from '../hooks/usePipelineHealth';
+import useTrafficData from '../hooks/useTrafficData';
+import { useAuth } from '../hooks/useAuth';
+import { fetchIncidentReports } from '../services/reportService';
 import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
 
-/* ── Helpers ── */
-function rng(min, max) { return min + Math.random() * (max - min); }
+/* ── Pipeline status badge: LIVE / STALE Xm / OFFLINE ── */
+function pipelineBadge(camId, health, online, nowMs) {
+  if (!online) return { label: 'OFFLINE', cls: 'text-zinc-500' };
+  const cam = health?.cameras?.[camId];
+  if (!cam?.last_success_utc) return { label: 'NO DATA', cls: 'text-zinc-500' };
+  const ageMin = Math.floor((nowMs - new Date(cam.last_success_utc).getTime()) / 60000);
+  if (ageMin < 10) return { label: 'LIVE', cls: 'text-emerald-400' };
+  return { label: `STALE ${ageMin}m`, cls: 'text-amber-400' };
+}
 
-const PHASES = ['ns-green', 'ns-yellow', 'ew-green', 'ew-yellow'];
-const PHASE_DURATIONS = [50, 5, 45, 5];
-const PHASE_COLORS = {
-  'ns-green':  { dot: 'bg-emerald-500', text: 'text-emerald-400', border: 'border-emerald-500/20', bg: 'bg-emerald-500/10', fill: 'bg-emerald-500' },
-  'ns-yellow': { dot: 'bg-yellow-500', text: 'text-yellow-400', border: 'border-yellow-500/20', bg: 'bg-yellow-500/10', fill: 'bg-yellow-500' },
-  'ew-green':  { dot: 'bg-blue-500',   text: 'text-blue-400',   border: 'border-blue-500/20',   bg: 'bg-blue-500/10',   fill: 'bg-blue-500' },
-  'ew-yellow': { dot: 'bg-yellow-500', text: 'text-yellow-400', border: 'border-yellow-500/20', bg: 'bg-yellow-500/10', fill: 'bg-yellow-500' },
-};
-
-const THROUGHPUT_DATA = [
-  { v: 180, lv: 160 }, { v: 420, lv: 390 }, { v: 680, lv: 710 }, { v: 920, lv: 880 },
-  { v: 760, lv: 730 }, { v: 640, lv: 610 }, { v: 710, lv: 690 }, { v: 780, lv: 750 },
-  { v: 830, lv: 800 }, { v: 890, lv: 860 }, { v: 960, lv: 920 }, { v: 1080, lv: 1020 },
-  { v: 1040, lv: 980 }, { v: 820, lv: 790 }, { v: 580, lv: 560 }, { v: 390, lv: 370 },
-];
-const MAX_THROUGHPUT = Math.max(...THROUGHPUT_DATA.flatMap(d => [d.v, d.lv]));
-
-const INITIAL_INCIDENTS = [
-  { id: 1, title: 'Fender bender — southbound', time: '14:32', status: 'Lane partially blocked', severity: 'high' },
-  { id: 2, title: 'Signal malfunction — east approach', time: '11:47', status: 'Resolved', severity: 'mid' },
-  { id: 3, title: 'Stalled vehicle — westbound', time: '09:15', status: 'Cleared', severity: 'low' },
-  { id: 4, title: 'Pedestrian crossing violation', time: '08:22', status: 'No action needed', severity: 'low' },
-];
-
-/* ── Sparkline ── */
-function Sparkline({ count, seed }) {
-  const bars = useMemo(() => Array.from({ length: count }, (_, i) => {
-    const seeded = ((seed * (i + 1) * 9301 + 49297) % 233280) / 233280;
-    return { key: i, h: seeded * 16 + 4 };
-  }), [count, seed]);
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!ref.current) return;
-    const id = setInterval(() => {
-      const children = ref.current.children;
-      for (let i = 0; i < children.length - 1; i++) children[i].style.height = children[i + 1].style.height;
-      children[children.length - 1].style.height = (Math.random() * 16 + 4) + 'px';
-    }, 2000);
-    return () => clearInterval(id);
-  }, []);
+/* ── Sparkline: the last N real values, no simulation ── */
+function Sparkline({ data, color = 'rgba(249,115,22,0.35)' }) {
+  const max = Math.max(...data, 1);
   return (
-    <div ref={ref} className="flex items-end gap-[2px] h-6 mt-3">
-      {bars.map(b => (
-        <div key={b.key} className="mini-bar" style={{ height: b.h + 'px', width: '3px', background: 'rgba(249,115,22,0.35)', borderRadius: '1.5px', minWidth: '3px', transition: 'height 0.5s ease' }} />
+    <div className="flex items-end gap-[2px] h-6 mt-3">
+      {data.map((v, i) => (
+        <div
+          key={i}
+          style={{
+            height: Math.max(2, (v / max) * 24) + 'px',
+            width: '3px',
+            background: color,
+            borderRadius: '1.5px',
+            minWidth: '3px',
+            transition: 'height 0.5s ease',
+          }}
+        />
       ))}
+      {data.length === 0 && <span className="text-[9px] text-zinc-600">no data yet</span>}
     </div>
   );
 }
 
-/* ── Throughput Chart ── */
-function ThroughputChart() {
+/* ── Hourly throughput: today (orange) overlaid on yesterday (zinc) ── */
+function ThroughputChart({ today, yesterday }) {
+  const max = Math.max(1, ...today, ...yesterday);
+  const pct = (v) => Math.max(2, (v / max) * 100);
   return (
     <div className="flex items-end gap-[6px] h-32">
-      {THROUGHPUT_DATA.map((d, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-[2px]">
-          <div className="w-full rounded-sm" style={{ height: (d.lv / MAX_THROUGHPUT * 100) + '%', background: 'rgba(255,255,255,0.04)', minHeight: '2px' }} />
-          <div className="w-full rounded-sm" style={{ height: (d.v / MAX_THROUGHPUT * 100) + '%', background: d.v >= 900 ? 'rgba(249,115,22,0.6)' : 'rgba(249,115,22,0.3)', minHeight: '2px', marginTop: '-' + (d.lv / MAX_THROUGHPUT * 100) + '%' }} />
+      {today.map((v, i) => (
+        <div key={i} className="flex-1 relative h-full">
+          <div
+            className="absolute bottom-0 w-full rounded-sm"
+            style={{ height: pct(yesterday[i]) + '%', background: 'rgba(255,255,255,0.05)' }}
+            title={`Yesterday ${i}:00 — ${yesterday[i]} vehicles`}
+          />
+          <div
+            className="absolute bottom-0 w-full rounded-sm"
+            style={{
+              height: pct(v) + '%',
+              background: v >= max * 0.8 ? 'rgba(249,115,22,0.65)' : 'rgba(249,115,22,0.3)',
+            }}
+            title={`Today ${i}:00 — ${v} vehicles`}
+          />
         </div>
       ))}
     </div>
   );
 }
 
-/* ── Pipeline status badge: LIVE / STALE Xm / OFFLINE ── */
-function pipelineBadge(camId, health, online) {
-  if (!online) return { label: 'OFFLINE', cls: 'text-zinc-500' };
-  const cam = health?.cameras?.[camId];
-  if (!cam?.last_success_utc) return { label: 'NO DATA', cls: 'text-zinc-500' };
-  const ageMin = Math.floor((Date.now() - new Date(cam.last_success_utc).getTime()) / 60000);
-  if (ageMin < 10) return { label: 'LIVE', cls: 'text-emerald-400' };
-  return { label: `STALE ${ageMin}m`, cls: 'text-amber-400' };
-}
+const prettyCamName = (slug) =>
+  (slug || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 const CamerasPage = () => {
   const { health: pipelineHealth, online: pipelineOnline } = usePipelineHealth();
+  const { user } = useAuth();
+  const {
+    loads,
+    counts,
+    latencyMs,
+    hourlyToday,
+    hourlyYesterday,
+    todaySoFar,
+    yesterdaySoFar,
+    vehicleTypeTotals,
+    networkCongestion,
+    avgConfidence,
+    directionToday,
+    peaks,
+  } = useTrafficData();
+
   const [selectedCamera, setSelectedCamera] = useState(
     CAMERA_FEEDS.find((c) => c.id === 'c003') || CAMERA_FEEDS[0],
   );
   const [cameraStatus, setCameraStatus] = useState('loading');
   const [camTimestamp, setCamTimestamp] = useState('');
-  const [latency, setLatency] = useState(12);
-  const [vehicles, setVehicles] = useState(1247);
-  const [speed, setSpeed] = useState(34);
-  const [congestion, setCongestion] = useState(62);
-  const [waitTime, setWaitTime] = useState(42);
-  const [dirN, setDirN] = useState(384);
-  const [dirS, setDirS] = useState(312);
-  const [dirE, setDirE] = useState(298);
-  const [dirW, setDirW] = useState(253);
-  const [snapshots, setSnapshots] = useState([]);
+  const [nowMs, setNowMs] = useState(0);
   const [snapTick, setSnapTick] = useState(0);
-  const [phaseIdx, setPhaseIdx] = useState(0);
-  const [phaseLeft, setPhaseLeft] = useState(PHASE_DURATIONS[0]);
+  const [reports, setReports] = useState([]);
 
-  /* ── Clock ── */
+  /* ── Clock (real time) ── */
   useEffect(() => {
     const id = setInterval(() => {
       const now = new Date();
+      setNowMs(now.getTime());
       const ts = now.toLocaleTimeString('en-US', { hour12: false });
       setCamTimestamp(ts + '.' + String(now.getMilliseconds()).padStart(3, '0').slice(0, 2));
     }, 100);
     return () => clearInterval(id);
   }, []);
 
-  /* ── Latency ── */
+  /* ── Snapshot refresh tick (cache-buster only) ── */
   useEffect(() => {
-    const id = setInterval(() => setLatency(8 + Math.floor(Math.random() * 12)), 2000);
+    const id = setInterval(() => setSnapTick(Math.random()), 30000);
     return () => clearInterval(id);
   }, []);
 
-  /* ── Signal phase ── */
+  /* ── Real incident reports ── */
   useEffect(() => {
-    const id = setInterval(() => {
-      setPhaseLeft(prev => {
-        if (prev <= 0) return PHASE_DURATIONS[(phaseIdx + 1) % PHASES.length];
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [phaseIdx]);
-  useEffect(() => {
-    if (phaseLeft <= 0) setPhaseIdx(prev => (prev + 1) % PHASES.length);
-  }, [phaseLeft]);
-
-  /* ── Snapshots ── */
-  useEffect(() => {
-    const fetchAll = async () => {
+    if (!user?.id) return undefined;
+    let cancelled = false;
+    const load = async () => {
       try {
-        const result = await supabase
-          .from('traffic_load')
-          .select('*')
-          .order('camera_id', { ascending: true });
-        if (!result.error) setSnapshots(result.data || []);
-      } catch { /* ignore */ }
+        const rows = await fetchIncidentReports(user.id);
+        if (!cancelled) setReports(rows || []);
+      } catch { /* keep previous data */ }
     };
-    fetchAll();
-    const interval = setInterval(() => { fetchAll(); setSnapTick(Math.random()); }, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    load();
+    const id = setInterval(load, 60000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [user?.id]);
 
-  /* ── Stats ── */
-  useEffect(() => {
-    const id = setInterval(() => {
-      setVehicles(v => Math.max(1100, Math.min(1400, v + Math.floor(rng(-5, 10)))));
-      setSpeed(s => Math.max(18, Math.min(52, s + rng(-2.5, 2))));
-      setCongestion(c => Math.max(20, Math.min(95, c + rng(-3, 3))));
-      setWaitTime(w => Math.max(15, Math.min(75, w + rng(-3, 3))));
-      setDirN(Math.round(vehicles * rng(0.26, 0.32)));
-      setDirS(Math.round(vehicles * rng(0.22, 0.28)));
-      setDirE(Math.round(vehicles * rng(0.20, 0.26)));
-    }, 3000);
-    return () => clearInterval(id);
-  }, [vehicles]);
+  /* ── Derived values (all computed from Supabase rows) ── */
+  const networkVehicles = loads.reduce((s, l) => s + (Number(l.vehicle_count) || 0), 0);
+  const ci = networkCongestion;
+  const congestionClass =
+    ci < 40 ? 'congestion-low' : ci < 65 ? 'congestion-mid' : ci < 80 ? 'congestion-high' : 'congestion-severe';
 
-  const ci = Math.round(congestion);
-  const congestionClass = ci < 40 ? 'congestion-low' : ci < 65 ? 'congestion-mid' : ci < 80 ? 'congestion-high' : 'congestion-severe';
-  const phase = PHASES[phaseIdx];
-  const pc = PHASE_COLORS[phase];
-  const phasePct = (phaseLeft / PHASE_DURATIONS[phaseIdx]) * 100;
-  const nsWait = Math.round(waitTime * 0.9);
-  const ewWait = Math.round(waitTime * 1.12);
+  const selectedCounts = counts.filter((r) => r.camera_id === selectedCamera.id);
+  const countSpark = selectedCounts.slice(-18).map((r) => Number(r.vehicle_count) || 0);
+  const confSpark = selectedCounts
+    .slice(-18)
+    .map((r) => Math.round((Number(r.avg_confidence) || 0) * 100));
+
+  const trendPct =
+    yesterdaySoFar > 0 ? Math.round(((todaySoFar - yesterdaySoFar) / yesterdaySoFar) * 100) : null;
+
+  const activeReports = reports.filter((r) => r.status === 'active');
+
+  const typeTotal = Object.values(vehicleTypeTotals).reduce((a, b) => a + b, 0);
+  const baseTypeRows = [
+    { label: 'Cars', key: 'car', color: 'bg-orange-400' },
+    { label: 'Trucks', key: 'truck', color: 'bg-blue-400' },
+    { label: 'Buses', key: 'bus', color: 'bg-emerald-400' },
+    { label: 'Motorcycles', key: 'motorcycle', color: 'bg-fuchsia-400' },
+  ].map((t) => ({ ...t, value: vehicleTypeTotals[t.key] || 0 }));
+  const otherValue = typeTotal - baseTypeRows.reduce((s, t) => s + t.value, 0);
+  const typeRows = otherValue > 0
+    ? [...baseTypeRows, { label: 'Other', key: 'other', color: 'bg-zinc-500', value: otherValue }]
+    : baseTypeRows;
+  const activeTypeRows = typeRows.filter((t) => t.value > 0);
+
+  const liveCamCount = CAMERA_LOCATIONS.filter((c) => {
+    const cam = pipelineHealth?.cameras?.[c.id];
+    if (!cam?.last_success_utc) return false;
+    return nowMs > 0 && nowMs - new Date(cam.last_success_utc).getTime() < 600000;
+  }).length;
+
+  const peakTimeLabel = peaks
+    ? new Date(peaks.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    : '—';
+  const peakCamLabel = peaks ? prettyCamName(peaks.camera_name) : '—';
+  const lastCycleLabel = pipelineHealth?.updated_utc
+    ? new Date(pipelineHealth.updated_utc).toLocaleTimeString('en-GB', { hour12: false })
+    : '—';
+
+  const reportSeverityDot = (severity) =>
+    severity === 'major' ? 'bg-red-500' : severity === 'moderate' ? 'bg-yellow-500' : 'bg-zinc-600';
+
+  const reportTime = (createdAt) => {
+    const d = new Date(createdAt);
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  };
 
   return (
     <div style={{ background: '#09090b', minHeight: '100vh', color: '#fff' }}>
@@ -185,7 +198,6 @@ const CamerasPage = () => {
         .congestion-mid { background: #facc15; box-shadow: 0 0 6px rgba(250,204,21,0.4); }
         .congestion-high { background: #f97316; box-shadow: 0 0 6px rgba(249,115,22,0.4); }
         .congestion-severe { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.4); }
-        .mini-bar { border-radius: 1.5px; min-width: 3px; transition: height 0.5s ease; }
         @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
         @keyframes pulse-ring { 0% { transform: scale(0.8); opacity: 0.5; } 100% { transform: scale(1.4); opacity: 0; } }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
@@ -200,7 +212,6 @@ const CamerasPage = () => {
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 9999px; }
       `}</style>
 
-      {/* Background Glows */}
       <div className="bg-glow" style={{ top: '-100px', left: '100px', width: '500px', height: '400px', background: '#f97316' }} />
       <div className="bg-glow" style={{ bottom: '-100px', right: '-100px', width: '400px', height: '400px', background: '#ef4444' }} />
 
@@ -265,7 +276,7 @@ const CamerasPage = () => {
 
                   <div className="absolute bottom-0 left-0 right-0 p-2.5 flex items-center justify-between">
                     <span className="text-[9px] font-mono text-white/50 bg-black/40 px-1.5 py-0.5 rounded">Gjirafa Slow TV</span>
-                    <span className="text-[9px] font-mono text-emerald-400 bg-black/40 px-1.5 py-0.5 rounded">{latency}ms</span>
+                    <span className="text-[9px] font-mono text-emerald-400 bg-black/40 px-1.5 py-0.5 rounded">{latencyMs != null ? `${latencyMs}ms` : '—'}</span>
                   </div>
 
                   {cameraStatus !== 'ready' && (
@@ -281,11 +292,11 @@ const CamerasPage = () => {
               {/* 2×2 Detection Snapshots */}
               <div className="grid grid-cols-2 gap-2">
                 {CAMERA_LOCATIONS.map((cam) => {
-                  const load = snapshots.find((s) => s.camera_id === cam.id) || {};
+                  const load = loads.find((s) => s.camera_id === cam.id) || {};
                   const level = load.load_level || 'low';
                   const color = getLoadColor(level);
-                  const name = (cam.name || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-                  const badge = pipelineBadge(cam.id, pipelineHealth, pipelineOnline);
+                  const name = prettyCamName(cam.name);
+                  const badge = pipelineBadge(cam.id, pipelineHealth, pipelineOnline, nowMs);
                   return (
                     <div key={cam.id} className="relative group cursor-pointer"
                       style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', background: '#000', aspectRatio: '16 / 10' }}
@@ -312,77 +323,73 @@ const CamerasPage = () => {
                       <div className="absolute inset-0 bg-black/15 group-hover:bg-black/5 transition-colors pointer-events-none" />
                       <div className={`absolute top-1.5 left-1.5 text-[8px] font-mono bg-black/50 px-1 py-0.5 rounded ${badge.cls}`}>{badge.label}</div>
                       <div className="absolute bottom-1.5 left-1.5 text-[8px] font-mono text-white/50 bg-black/50 px-1 py-0.5 rounded">{name}</div>
+                      <div className="absolute bottom-1.5 right-1.5 text-[8px] font-mono text-white/70 bg-black/50 px-1 py-0.5 rounded">{load.vehicle_count ?? '—'} veh</div>
                       <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
                     </div>
                   );
                 })}
               </div>
 
-              {/* Signal Phase */}
+              {/* Peak (last 24h) — real data */}
               <div className="glass-card rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <iconify-icon icon="lucide:traffic-cone" width="14" className="text-orange-400" />
-                  <span className="stat-label">Signal Phase</span>
+                  <iconify-icon icon="lucide:trending-up" width="14" className="text-orange-400" />
+                  <span className="stat-label">Peak — last 24h</span>
                 </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {PHASES.map(p => {
-                    const isActive = p === phase;
-                    const c = PHASE_COLORS[p];
-                    const labelMap = { 'ns-green': 'N-S Go', 'ns-yellow': 'N-S Wait', 'ew-green': 'E-W Go', 'ew-yellow': 'E-W Wait' };
-                    return (
-                      <div key={p} className={`text-center p-2 rounded-lg ${isActive ? c.bg + ' border ' + c.border : 'bg-zinc-800/50 border border-zinc-700/30'}`}>
-                        <div className={`w-3 h-3 rounded-full mx-auto mb-1 ${isActive ? c.dot : 'bg-zinc-600'}`} />
-                        <span className={`text-[8px] font-medium uppercase ${isActive ? c.text : 'text-zinc-500'}`}>{labelMap[p]}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-[10px] text-zinc-500">Phase timer</span>
-                  <span className={`text-sm font-mono font-semibold ${pc.text}`}>{phaseLeft}s</span>
-                </div>
-                <div className="progress-track mt-1.5">
-                  <div className={`progress-fill ${pc.fill}`} style={{ width: `${phasePct}%` }} />
+                <div className="stat-value">{peaks ? peaks.count : '—'}</div>
+                <div className="stat-label mt-1">vehicles in one cycle</div>
+                <div className="mt-3 flex items-center justify-between text-[11px] text-zinc-400">
+                  <span className="flex items-center gap-1.5">
+                    <iconify-icon icon="lucide:clock" width="12" className="text-zinc-500" />
+                    {peakTimeLabel}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <iconify-icon icon="lucide:video" width="12" className="text-zinc-500" />
+                    {peakCamLabel}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* RIGHT: Statistics */}
+            {/* RIGHT: Statistics (all real data) */}
             <div className="lg:col-span-7 xl:col-span-8 space-y-4">
 
               {/* 4 Key Metrics */}
               <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-                {/* Vehicles / hr */}
+                {/* Vehicles last cycle */}
                 <div className="glass-card rounded-xl p-4 anim d3">
                   <div className="flex items-center justify-between mb-3">
                     <div className="w-7 h-7 rounded-md bg-orange-500/10 flex items-center justify-center">
                       <iconify-icon icon="lucide:car" width="14" className="text-orange-400" />
                     </div>
-                    <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
-                      <iconify-icon icon="lucide:trending-up" width="10" /> +5.2%
-                    </div>
+                    {trendPct != null && (
+                      <div className={`flex items-center gap-1 text-[10px] font-medium ${trendPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <iconify-icon icon={trendPct >= 0 ? 'lucide:trending-up' : 'lucide:trending-down'} width="10" />
+                        {trendPct >= 0 ? '+' : ''}{trendPct}% vs yesterday
+                      </div>
+                    )}
                   </div>
-                  <div className="stat-value">{Math.round(vehicles).toLocaleString()}</div>
-                  <div className="stat-label mt-1">Vehicles / hr</div>
-                  <Sparkline count={18} seed={1} />
+                  <div className="stat-value">{networkVehicles.toLocaleString()}</div>
+                  <div className="stat-label mt-1">Vehicles last cycle</div>
+                  <Sparkline data={countSpark} />
                 </div>
 
-                {/* Avg Speed */}
+                {/* Detection confidence */}
                 <div className="glass-card rounded-xl p-4 anim d4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="w-7 h-7 rounded-md bg-blue-500/10 flex items-center justify-center">
-                      <iconify-icon icon="lucide:gauge" width="14" className="text-blue-400" />
-                    </div>
-                    <div className="flex items-center gap-1 text-[10px] text-red-400 font-medium">
-                      <iconify-icon icon="lucide:trending-down" width="10" /> -8.1%
+                      <iconify-icon icon="lucide:scan-line" width="14" className="text-blue-400" />
                     </div>
                   </div>
-                  <div className="stat-value">{Math.round(speed)}<span className="text-sm text-zinc-500 ml-1">km/h</span></div>
-                  <div className="stat-label mt-1">Avg Speed</div>
-                  <Sparkline count={18} seed={2} />
+                  <div className="stat-value">
+                    {avgConfidence != null ? Math.round(avgConfidence * 100) : '—'}
+                    <span className="text-sm text-zinc-500 ml-1">%</span>
+                  </div>
+                  <div className="stat-label mt-1">Detection confidence</div>
+                  <Sparkline data={confSpark} color="rgba(96,165,250,0.35)" />
                 </div>
 
-                {/* Congestion */}
+                {/* Congestion Index */}
                 <div className="glass-card rounded-xl p-4 anim d5">
                   <div className="flex items-center justify-between mb-3">
                     <div className="w-7 h-7 rounded-md bg-yellow-500/10 flex items-center justify-center">
@@ -403,144 +410,156 @@ const CamerasPage = () => {
                     <div className="w-7 h-7 rounded-md bg-red-500/10 flex items-center justify-center">
                       <iconify-icon icon="lucide:siren" width="14" className="text-red-400" />
                     </div>
-                    <span className="incident-badge bg-red-500/15 text-red-400">1 Active</span>
+                    <span className={`incident-badge ${activeReports.length > 0 ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
+                      {activeReports.length > 0 ? `${activeReports.length} Active` : 'Clear'}
+                    </span>
                   </div>
-                  <div className="stat-value">1</div>
+                  <div className="stat-value">{activeReports.length}</div>
                   <div className="stat-label mt-1">Incidents</div>
-                  <div className="text-[10px] text-red-400/80 mt-2 truncate">Fender bender — southbound lane</div>
+                  <div className="text-[10px] text-red-400/80 mt-2 truncate">
+                    {activeReports[0]?.title || reports[0]?.title || 'No reports yet'}
+                  </div>
                 </div>
               </div>
 
               {/* Throughput + Direction */}
               <div className="grid xl:grid-cols-3 gap-4">
-                <div className="xl:col-span-2 glass-card rounded-xl p-5 anim d5">
+                <div className={`${directionToday.hasData ? 'xl:col-span-2' : 'xl:col-span-3'} glass-card rounded-xl p-5 anim d5`}>
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <iconify-icon icon="lucide:bar-chart-3" width="16" className="text-zinc-500" />
                       <span className="text-sm font-semibold tracking-tight">Hourly Throughput</span>
                     </div>
                     <div className="flex items-center gap-3 text-[10px]">
-                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-orange-500/60" />This Week</span>
-                      <span className="flex items-center gap-1.5 text-zinc-500"><span className="w-2 h-2 rounded-sm bg-zinc-700" />Last Week</span>
+                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-orange-500/60" />Today</span>
+                      <span className="flex items-center gap-1.5 text-zinc-500"><span className="w-2 h-2 rounded-sm bg-zinc-700" />Yesterday</span>
                     </div>
                   </div>
-                  <ThroughputChart />
+                  <ThroughputChart today={hourlyToday} yesterday={hourlyYesterday} />
                   <div className="flex justify-between mt-2 text-[9px] text-zinc-600 font-mono">
-                    <span>6AM</span><span>9AM</span><span>12PM</span><span>3PM</span><span>6PM</span><span>9PM</span>
+                    <span>12AM</span><span>4AM</span><span>8AM</span><span>12PM</span><span>4PM</span><span>8PM</span>
                   </div>
                 </div>
 
-                <div className="glass-card rounded-xl p-5 anim d6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <iconify-icon icon="lucide:compass" width="16" className="text-zinc-500" />
-                    <span className="text-sm font-semibold tracking-tight">By Direction</span>
-                  </div>
-                  <div className="space-y-3.5">
-                    {[
-                      { label: 'Northbound', icon: 'lucide:arrow-up', val: dirN, pct: dirN / vehicles * 100, color: 'bg-orange-500' },
-                      { label: 'Southbound', icon: 'lucide:arrow-down', val: dirS, pct: dirS / vehicles * 100, color: 'bg-blue-500' },
-                      { label: 'Eastbound', icon: 'lucide:arrow-right', val: dirE, pct: dirE / vehicles * 100, color: 'bg-emerald-500' },
-                      { label: 'Westbound', icon: 'lucide:arrow-left', val: dirW, pct: dirW / vehicles * 100, color: 'bg-fuchsia-500' },
-                    ].map(d => (
-                      <div key={d.label}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[11px] text-zinc-300 flex items-center gap-1.5">
-                            <iconify-icon icon={d.icon} width="12" className="text-zinc-500" /> {d.label}
-                          </span>
-                          <span className="text-[11px] font-mono text-zinc-400">{d.val}</span>
+                {directionToday.hasData && (
+                  <div className="glass-card rounded-xl p-5 anim d6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <iconify-icon icon="lucide:compass" width="16" className="text-zinc-500" />
+                      <span className="text-sm font-semibold tracking-tight">Line Crossings Today</span>
+                    </div>
+                    <div className="space-y-3.5">
+                      {[
+                        { label: 'Inbound', icon: 'lucide:arrow-down-right', val: directionToday.in, color: 'bg-orange-500' },
+                        { label: 'Outbound', icon: 'lucide:arrow-up-right', val: directionToday.out, color: 'bg-blue-500' },
+                      ].map((d) => (
+                        <div key={d.label}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[11px] text-zinc-300 flex items-center gap-1.5">
+                              <iconify-icon icon={d.icon} width="12" className="text-zinc-500" /> {d.label}
+                            </span>
+                            <span className="text-[11px] font-mono text-zinc-400">{d.val}</span>
+                          </div>
+                          <div className="progress-track">
+                            <div
+                              className={`progress-fill ${d.color}`}
+                              style={{ width: `${Math.min((d.val / Math.max(directionToday.in, directionToday.out, 1)) * 100, 100)}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="progress-track"><div className={`progress-fill ${d.color}`} style={{ width: `${Math.min(d.pct * 2, 100)}%` }} /></div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-zinc-600 mt-4">Vehicles crossing the counting lines, summed across all cameras today.</p>
                   </div>
-                </div>
+                )}
               </div>
 
-              {/* Vehicle Types + Incidents + Wait Time */}
+              {/* Vehicle Types + Incident Log + Pipeline */}
               <div className="grid xl:grid-cols-3 gap-4">
+                {/* Vehicle Types — real JSONB breakdown, today */}
                 <div className="glass-card rounded-xl p-5 anim d7">
                   <div className="flex items-center gap-2 mb-4">
                     <iconify-icon icon="lucide:layers" width="16" className="text-zinc-500" />
                     <span className="text-sm font-semibold tracking-tight">Vehicle Types</span>
                   </div>
-                  <div className="space-y-3">
-                    {[
-                      { label: 'Passenger Cars', pct: 78, color: 'bg-orange-400' },
-                      { label: 'Light Trucks', pct: 12, color: 'bg-blue-400' },
-                      { label: 'Transit / Bus', pct: 6, color: 'bg-emerald-400' },
-                      { label: 'Motorcycles / Other', pct: 4, color: 'bg-zinc-500' },
-                    ].map(t => (
-                      <div key={t.label} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-2 h-2 rounded-sm ${t.color}`} />
-                          <span className="text-[11px] text-zinc-300">{t.label}</span>
-                        </div>
-                        <span className="text-[11px] font-mono text-zinc-400">{t.pct}%</span>
+                  {activeTypeRows.length === 0 ? (
+                    <p className="text-[11px] text-zinc-600">No detections recorded today yet.</p>
+                  ) : (
+                    <>
+                      <div className="space-y-3">
+                        {activeTypeRows.map((t) => (
+                          <div key={t.key} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              <div className={`w-2 h-2 rounded-sm ${t.color}`} />
+                              <span className="text-[11px] text-zinc-300">{t.label}</span>
+                            </div>
+                            <span className="text-[11px] font-mono text-zinc-400">
+                              {Math.round((t.value / typeTotal) * 100)}%
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  <div className="flex rounded-md overflow-hidden h-2 mt-4">
-                    <div className="bg-orange-400" style={{ width: '78%' }} />
-                    <div className="bg-blue-400" style={{ width: '12%' }} />
-                    <div className="bg-emerald-400" style={{ width: '6%' }} />
-                    <div className="bg-zinc-500" style={{ width: '4%' }} />
-                  </div>
+                      <div className="flex rounded-md overflow-hidden h-2 mt-4">
+                        {activeTypeRows.map((t) => (
+                          <div key={t.key} className={t.color} style={{ width: `${(t.value / typeTotal) * 100}%` }} />
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
 
+                {/* Incident Log — real user reports */}
                 <div className="glass-card rounded-xl p-5 anim d7">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <iconify-icon icon="lucide:file-warning" width="16" className="text-zinc-500" />
                       <span className="text-sm font-semibold tracking-tight">Incident Log</span>
                     </div>
-                    <span className="text-[10px] text-zinc-500">Last 6h</span>
+                    <span className="text-[10px] text-zinc-500">{reports.length} total</span>
                   </div>
                   <div className="space-y-2.5 max-h-[160px] overflow-y-auto pr-1">
-                    {INITIAL_INCIDENTS.map(inc => {
-                      const isHigh = inc.severity === 'high';
-                      const isMid = inc.severity === 'mid';
-                      return (
-                        <div key={inc.id} className={`flex items-start gap-2.5 p-2 rounded-lg ${isHigh ? 'bg-red-500/5 border border-red-500/10' : isMid ? 'bg-yellow-500/5 border border-yellow-500/10' : ''}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${isHigh ? 'bg-red-500' : isMid ? 'bg-yellow-500' : 'bg-zinc-600'}`} />
-                          <div>
-                            <p className={`text-[11px] font-medium ${isHigh ? 'text-zinc-200' : 'text-zinc-300'}`}>{inc.title}</p>
-                            <p className="text-[9px] text-zinc-500 font-mono mt-0.5">{inc.time} · {inc.status}</p>
-                          </div>
+                    {reports.length === 0 && (
+                      <p className="text-[11px] text-zinc-600">No reports yet — create one on the Live Map.</p>
+                    )}
+                    {reports.slice(0, 8).map((rep) => (
+                      <div key={rep.id} className={`flex items-start gap-2.5 p-2 rounded-lg ${rep.status === 'active' ? 'bg-red-500/5 border border-red-500/10' : ''}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${reportSeverityDot(rep.severity)}`} />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium text-zinc-200 truncate">{rep.title}</p>
+                          <p className="text-[9px] text-zinc-500 font-mono mt-0.5">{reportTime(rep.createdAt)} · {rep.status}</p>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 </div>
 
+                {/* Pipeline status — real health.json data */}
                 <div className="glass-card rounded-xl p-5 anim d7">
                   <div className="flex items-center gap-2 mb-4">
-                    <iconify-icon icon="lucide:clock" width="16" className="text-zinc-500" />
-                    <span className="text-sm font-semibold tracking-tight">Avg Wait Time</span>
+                    <iconify-icon icon="lucide:activity" width="16" className="text-zinc-500" />
+                    <span className="text-sm font-semibold tracking-tight">Pipeline</span>
                   </div>
-                  <div className="flex items-baseline gap-2 mb-4">
-                    <span className="text-3xl font-semibold">{Math.round(waitTime)}</span>
-                    <span className="text-sm text-zinc-500">seconds</span>
-                  </div>
-                  <div className="space-y-2.5">
+                  <div className="space-y-2.5 text-[11px]">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-zinc-400">North-South</span>
-                      <span className="text-[11px] font-mono text-zinc-300">{nsWait}s</span>
+                      <span className="text-zinc-500">Status</span>
+                      <span className={`font-mono font-semibold ${pipelineOnline ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                        {pipelineOnline ? 'ONLINE' : 'OFFLINE'}
+                      </span>
                     </div>
-                    <div className="progress-track"><div className="progress-fill bg-orange-500" style={{ width: `${(nsWait / 80) * 100}%` }} /></div>
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-zinc-400">East-West</span>
-                      <span className="text-[11px] font-mono text-zinc-300">{ewWait}s</span>
+                      <span className="text-zinc-500">Mode</span>
+                      <span className="font-mono text-zinc-300">{pipelineHealth?.pipeline_mode || '—'}</span>
                     </div>
-                    <div className="progress-track"><div className="progress-fill bg-blue-500" style={{ width: `${(ewWait / 80) * 100}%` }} /></div>
-                  </div>
-                  <div className="mt-4 pt-3 border-t border-zinc-800/60">
                     <div className="flex items-center justify-between">
-                      <span className="stat-label">Cycle Length</span>
-                      <span className="text-[12px] font-mono text-zinc-300">120s</span>
+                      <span className="text-zinc-500">Cycle interval</span>
+                      <span className="font-mono text-zinc-300">{pipelineHealth?.interval_minutes ?? '—'} min</span>
                     </div>
-                    <div className="flex items-center justify-between mt-1.5">
-                      <span className="stat-label">Green Ratio</span>
-                      <span className="text-[12px] font-mono text-emerald-400">68%</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500">Cameras live</span>
+                      <span className="font-mono text-zinc-300">{liveCamCount}/{CAMERA_LOCATIONS.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500">Last cycle</span>
+                      <span className="font-mono text-zinc-300">{lastCycleLabel}</span>
                     </div>
                   </div>
                 </div>
@@ -557,3 +576,4 @@ const CamerasPage = () => {
 };
 
 export default CamerasPage;
+
