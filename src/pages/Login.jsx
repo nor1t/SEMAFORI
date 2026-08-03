@@ -57,7 +57,7 @@ const Login = () => {
       return;
     }
 
-    navigate('/dashboard');
+    navigate('/cameras');
   };
 
   return (

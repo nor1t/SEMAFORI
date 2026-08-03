@@ -6,9 +6,10 @@ import { LanguageProvider } from './context/LanguageContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
-import TrafficCommandCenter from './pages/TrafficCommandCenter';
+import CamerasPage from './pages/CamerasPage';
+import AIChatPage from './pages/AIChatPage';
+import LiveMapPage from './pages/LiveMapPage';
 
 function App() {
   return (
@@ -17,23 +18,25 @@ function App() {
         <Router>
           <AuthProvider>
             <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/" element={<Navigate to="/cameras" replace />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/profile" element={<Profile />} />
-              <Route path="/dashboard" element={
+              <Route path="/cameras" element={
                 <ProtectedRoute>
-                  <TrafficCommandCenter />
+                  <CamerasPage />
                 </ProtectedRoute>
               } />
-              <Route
-                path="/traffic-command-center"
-                element={
-                  <ProtectedRoute>
-                    <TrafficCommandCenter />
-                  </ProtectedRoute>
-                }
-              />
+              <Route path="/ai-chat" element={
+                <ProtectedRoute>
+                  <AIChatPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/live-map" element={
+                <ProtectedRoute>
+                  <LiveMapPage />
+                </ProtectedRoute>
+              } />
             </Routes>
           </AuthProvider>
         </Router>

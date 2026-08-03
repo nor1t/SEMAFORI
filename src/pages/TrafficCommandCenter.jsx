@@ -3,6 +3,8 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
 import { groq } from '../services/groqService';
 import { createIncidentReport, fetchIncidentReports } from '../services/reportService';
+import { supabase } from '../services/supabaseClient';
+import { snapshotUrl } from '../shared/snapshots';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -10,16 +12,21 @@ import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
 
 const MAP_CENTER = [42.6629, 21.1655];
+
+// Camera locations for the traffic-load colour-coded markers on the map.
+// Must match the lat/lng values in semafori-vision/cameras.py.
+const CAMERA_LOCATIONS = [
+  { id: 'c001', name: 'fushe-kosova', lat: 42.643, lng: 21.089 },
+  { id: 'c002', name: 'aktash', lat: 42.664, lng: 21.161 },
+  { id: 'c003', name: 'pejton', lat: 42.665, lng: 21.166 },
+  { id: 'c004', name: 'bregu-i-diellit', lat: 42.652, lng: 21.150 },
+];
+
 const CAMERA_FEEDS = [
-  { id: 'pejton', name: 'Pejton', url: 'https://video.gjirafa.com/embed/slow-tv-pejton?autoplay=true&am=true' },
-  { id: 'ick-aktash', name: 'ICK Aktash', url: 'https://video.gjirafa.com/embed/slow-tv-ick-aktash?autoplay=true&am=true' },
-  { id: 'prizren-park', name: 'Prizren Premium Park', url: 'https://video.gjirafa.com/embed/slow-tv-prizren-premiumpark?autoplay=true&am=true' },
-  { id: 'ortakoll-prizren', name: 'Ortakoll Prizren', url: 'https://video.gjirafa.com/embed/slow-tv-ortakoll-prizren?autoplay=true&am=true' },
-  { id: 'bregu-diellit-1', name: 'Bregu i Diellit 1', url: 'https://video.gjirafa.com/embed/slow-tv-bregu-i-diellit-1?autoplay=true&am=true' },
-  { id: 'gjilani', name: 'Gjilani', url: 'https://video.gjirafa.com/embed/slow-tv-gjilani?autoplay=true&am=true' },
-  { id: 'bregu-diellit-2', name: 'Bregu i Diellit 2', url: 'https://video.gjirafa.com/embed/slow-tv-bregu-i-diellit-2?autoplay=true&am=true' },
-  { id: 'fushe-kosova', name: 'Fushe Kosova', url: 'https://video.gjirafa.com/embed/slow-tv-fushe-kosova?autoplay=true&am=true' },
-  { id: 'veternik-2', name: 'Veternik 2', url: 'https://video.gjirafa.com/embed/slow-tv-veternik-2?autoplay=true&am=true' },
+  { id: 'c001', name: 'Fushë Kosova', url: 'https://video.gjirafa.com/embed/slow-tv-fushe-kosova?autoplay=true&am=true' },
+  { id: 'c002', name: 'Aktash', url: 'https://video.gjirafa.com/embed/slow-tv-ick-aktash?autoplay=true&am=true' },
+  { id: 'c003', name: 'Pejton', url: 'https://video.gjirafa.com/embed/slow-tv-pejton?autoplay=true&am=true' },
+  { id: 'c004', name: 'Bregu i Diellit', url: 'https://video.gjirafa.com/embed/slow-tv-bregu-i-diellit-1?autoplay=true&am=true' },
 ];
 const GROQ_MODEL = 'llama-3.1-8b-instant';
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -639,23 +646,39 @@ function CameraSection() {
   const dark = theme === 'dark';
   const [cameraStatus, setCameraStatus] = useState('loading');
   const [selectedCamera, setSelectedCamera] = useState(
-    CAMERA_FEEDS.find((c) => c.id === 'fushe-kosova') || CAMERA_FEEDS[0],
+    CAMERA_FEEDS.find((c) => c.id === 'c003') || CAMERA_FEEDS[0],
   );
-  const [detectionEnabled, setDetectionEnabled] = useState(true);
+  const [cameraLoad, setCameraLoad] = useState(null);
 
-  // Reset camera status on feed change.
+  const fetchCameraLoad = useCallback(async (cameraId) => {
+    try {
+      const result = await supabase
+        .from('traffic_load')
+        .select('*')
+        .eq('camera_id', cameraId)
+        .maybeSingle();
+      if (!result.error) setCameraLoad(result.data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchCameraLoad(selectedCamera.id);
+    const interval = setInterval(() => fetchCameraLoad(selectedCamera.id), 15000);
+    return () => clearInterval(interval);
+  }, [selectedCamera.id, fetchCameraLoad]);
+
   const handleCameraChange = (e) => {
     const camera = CAMERA_FEEDS.find((c) => c.id === e.target.value);
     if (!camera) return;
     setCameraStatus('loading');
     setSelectedCamera(camera);
-    resetSession();
   };
 
-  const { laneCounts, sessionTotals, flashLanes, totalPerMinute, detecting, resetSession } =
-    useVehicleCountSimulation(detectionEnabled && cameraStatus === 'ready');
-
   const currentCameraFeed = selectedCamera.url;
+  const loadLevel = cameraLoad?.load_level || 'low';
+  const loadColors = { low: '#10b981', medium: '#f59e0b', high: '#f97316', congested: '#ef4444' };
+  const loadColor = loadColors[loadLevel] || '#10b981';
+  const loadLabels = { low: 'Low', medium: 'Medium', high: 'High', congested: 'Congested' };
 
   return (
     <section id="video" className={`py-16 lg:py-20 ${dark ? 'bg-navy-950' : 'bg-paper-50'}`}>
@@ -683,30 +706,7 @@ function CameraSection() {
             </h2>
           </div>
 
-          {/* Controls row */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Detection toggle */}
-            <button
-              onClick={() => setDetectionEnabled((v) => !v)}
-              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                detectionEnabled
-                  ? dark
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                    : 'border-emerald-500/40 bg-emerald-50 text-emerald-700'
-                  : dark
-                  ? 'border-navy-600 bg-navy-800 text-gray-400'
-                  : 'border-gray-300 bg-white text-gray-500'
-              }`}
-            >
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  detectionEnabled && detecting ? 'animate-pulse bg-emerald-400' : 'bg-gray-500'
-                }`}
-              />
-              {detectionEnabled ? 'Detection ON' : 'Detection OFF'}
-            </button>
-
-            {/* Camera selector */}
             <label
               className={`text-xs font-semibold uppercase tracking-wide ${
                 dark ? 'text-gray-400' : 'text-gray-600'
@@ -780,51 +780,26 @@ function CameraSection() {
                 <p className="mt-1 text-[11px] text-gray-200">Gjirafa Slow TV</p>
               </div>
 
-              {/* ── Vehicle count panel (top-centre) ── */}
-              {cameraStatus === 'ready' && detectionEnabled && (
+              {/* ── Real-time road-load badge (top-centre) ── */}
+              {cameraStatus === 'ready' && (
                 <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-xl bg-black/65 px-5 py-3 backdrop-blur-sm">
                   <div className="flex items-center gap-3">
-                    {/* Animated detecting dot */}
                     <span className="flex h-2 w-2 flex-shrink-0 items-center justify-center">
-                      <span className={`block h-2 w-2 rounded-full ${detecting ? 'animate-pulse bg-emerald-400' : 'bg-gray-500'}`} />
+                      <span className="block h-2 w-2 rounded-full animate-pulse" style={{ backgroundColor: loadColor }} />
                     </span>
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-300">
-                      Vehicle detection
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.24em]" style={{ color: loadColor }}>
+                      {loadLabels[loadLevel]} Traffic
                     </span>
                     <span className="text-[10px] text-gray-400">|</span>
                     <span className="text-[10px] text-gray-300">
-                      <span className="text-white font-semibold">{totalPerMinute}</span> veh/min total
+                      <span className="text-white font-semibold">{cameraLoad?.vehicle_count ?? '—'}</span> veh/cycle
                     </span>
                   </div>
-
-                  {/* Per-lane counts */}
-                  <div className="mt-2 flex gap-3">
-                    {approachDefinitions.map((approach) => {
-                      const count = laneCounts[approach.id] ?? 0;
-                      const isFlashing = flashLanes[approach.id];
-                      return (
-                        <div
-                          key={approach.id}
-                          className={`flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 transition-colors duration-300 ${
-                            isFlashing
-                              ? 'bg-emerald-500/25 ring-1 ring-emerald-400/50'
-                              : 'bg-white/8'
-                          }`}
-                        >
-                          <span
-                            className={`text-base font-bold leading-none tabular-nums transition-colors duration-300 ${
-                              isFlashing ? 'text-emerald-300' : 'text-white'
-                            }`}
-                          >
-                            {count}
-                          </span>
-                          <span className="text-[9px] uppercase tracking-[0.2em] text-gray-400">
-                            {approach.label}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  {cameraLoad?.rolling_rate != null && (
+                    <div className="mt-2 text-[9px] uppercase tracking-[0.2em] text-gray-400 text-center">
+                      Rolling: {cameraLoad.rolling_rate.toFixed(1)} veh/cycle · Updated {cameraLoad.timestamp ? new Date(cameraLoad.timestamp).toLocaleTimeString() : '—'}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -846,46 +821,9 @@ function CameraSection() {
                 </div>
               )}
 
-              {/* ── Lane-line overlays ── */}
-              {approachDefinitions.map((approach) => {
-                const isFlashing = flashLanes[approach.id];
-                return (
-                  <React.Fragment key={approach.id}>
-                    {/* Detection line */}
-                    <div
-                      className={`absolute border-2 transition-colors duration-300 ${
-                        isFlashing
-                          ? 'border-emerald-300'
-                          : 'border-dashed border-emerald-400/85'
-                      }`}
-                      style={{
-                        left: `${Math.min(approach.line.x1, approach.line.x2)}%`,
-                        top: `${Math.min(approach.line.y1, approach.line.y2)}%`,
-                        width: `${Math.abs(approach.line.x2 - approach.line.x1)}%`,
-                        height: `${Math.abs(approach.line.y2 - approach.line.y1) || 0.15}%`,
-                        minHeight: '2px',
-                      }}
-                    />
-                    {/* Lane label */}
-                    <div
-                      className="absolute -translate-x-1/2 rounded-full bg-black/65 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-emerald-300 backdrop-blur-sm"
-                      style={{
-                        left: `${approach.line.labelX}%`,
-                        top: `${approach.line.labelY}%`,
-                      }}
-                    >
-                      {approach.label}
-                    </div>
-                  </React.Fragment>
-                );
-              })}
-
-              {/* Bottom lane guide bar */}
-              <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-full bg-black/60 px-4 py-2 text-[10px] uppercase tracking-[0.24em] text-white backdrop-blur-sm">
-                <span className="text-emerald-300">Lane guide:</span>
-                {approachDefinitions.map((approach) => (
-                  <span key={approach.id}>{approach.label}</span>
-                ))}
+              {/* Bottom github-like status bar */}
+              <div className="absolute bottom-4 left-4 rounded-full bg-black/60 px-4 py-2 text-[10px] uppercase tracking-[0.24em] text-white backdrop-blur-sm">
+                <span className="text-emerald-300">Roboflow rfdetr-small</span> · {loadLabels[loadLevel]} traffic
               </div>
             </div>
           </div>
@@ -914,28 +852,9 @@ function CameraSection() {
                   Source: <span className="text-emerald-400">Gjirafa</span>
                 </div>
 
-                {/* Per-lane session totals */}
-                {detectionEnabled && cameraStatus === 'ready' && (
-                  <div
-                    className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs ${
-                      dark ? 'bg-navy-800 text-gray-300' : 'bg-white text-slate-700'
-                    }`}
-                  >
-                    <span className={dark ? 'text-gray-500' : 'text-gray-400'}>
-                      Session totals:
-                    </span>
-                    {approachDefinitions.map((approach) => (
-                      <span key={approach.id} className="tabular-nums">
-                        <span className={dark ? 'text-gray-500' : 'text-gray-400'}>
-                          {approach.label}:{' '}
-                        </span>
-                        <span className="font-semibold text-emerald-400">
-                          {sessionTotals[approach.id] ?? 0}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <div className={`rounded-full px-3 py-1.5 text-[11px] ${dark ? 'bg-black/35 text-gray-400' : 'bg-white text-slate-500'}`}>
+                  Detection: Roboflow rfdetr-small · real vehicle counts
+                </div>
               </div>
 
               {/* Right: attribution */}
@@ -947,18 +866,91 @@ function CameraSection() {
                 >
                   Live feed provided by Gjirafa Slow TV
                 </div>
-                {detectionEnabled && (
-                  <div
-                    className={`rounded-full px-3 py-1.5 text-[11px] ${
-                      dark ? 'bg-black/35 text-gray-400' : 'bg-white text-slate-500'
-                    }`}
-                  >
-                    Detection: time-of-day model · updates every 2.5 s
-                  </div>
-                )}
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── SnapshotGrid — 4 latest annotated detection images ─────────────────────
+function SnapshotGrid() {
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
+  const [snapshots, setSnapshots] = useState([]);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      try {
+        const result = await supabase
+          .from('traffic_load')
+          .select('*')
+          .order('camera_id', { ascending: true });
+        if (!result.error) setSnapshots(result.data || []);
+      } catch { /* ignore */ }
+    };
+    fetchAll();
+    const interval = setInterval(() => { fetchAll(); setTick(Math.random()); }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <section className={`py-10 pb-16 ${dark ? 'bg-navy-950' : 'bg-paper-50'}`}>
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="mb-6 flex items-center gap-3">
+          <div className="eastern-line w-6" />
+          <span className={`text-[10px] font-medium uppercase tracking-[0.28em] ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>
+            Detection Snapshots
+          </span>
+          <span className={`text-[10px] ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+            · updated every 1 minute
+          </span>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {CAMERA_LOCATIONS.map((cam) => {
+            const load = snapshots.find((s) => s.camera_id === cam.id) || {};
+            const level = load.load_level || 'low';
+            const loadColors = { low: '#10b981', medium: '#f59e0b', high: '#f97316', congested: '#ef4444' };
+            const color = loadColors[level] || '#10b981';
+            const name = (cam.name || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+            return (
+              <div key={cam.id} className={`rounded-2xl overflow-hidden border ${dark ? 'border-navy-600/30 bg-navy-800/40' : 'border-gray-200 bg-white'}`}>
+                <div className="aspect-video bg-black relative">
+                  <img
+                    key={`${cam.name}-${tick}`}
+                    src={snapshotUrl(cam.name, tick)}
+                    alt={`Snapshot for ${name}`}
+                    className="h-full w-full object-contain"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                    }}
+                  />
+                  <div className="absolute inset-0 items-center justify-center text-[10px] uppercase tracking-[0.2em] text-gray-600 hidden">
+                    (no snapshot)
+                  </div>
+                  {load.vehicle_count != null && (
+                    <div className="absolute bottom-2 right-2 rounded-lg bg-black/70 px-2.5 py-1.5 backdrop-blur-sm">
+                      <span className="text-sm font-bold text-white tabular-nums">{load.vehicle_count}</span>
+                      <span className="ml-1 text-[9px] text-gray-300">veh</span>
+                    </div>
+                  )}
+                </div>
+                <div className="px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className={`text-xs font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>{name}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color }}>{level}</span>
+                  </div>
+                  <div className={`mt-1 text-[11px] ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {load.vehicle_count != null ? `Rate: ${(load.rolling_rate || 0).toFixed(1)} veh/cycle` : 'No data yet'}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -1224,8 +1216,28 @@ function LiveMapSection({ markers }) {
     lat: MAP_CENTER[0].toFixed(6),
     lng: MAP_CENTER[1].toFixed(6),
   });
+  const [trafficLoads, setTrafficLoads] = useState([]);
 
   const combinedMarkers = useMemo(() => [...markers, ...savedMarkers], [markers, savedMarkers]);
+
+  // ── Fetch traffic_load for camera colour-coded markers ────────────
+  useEffect(() => {
+    const fetchTrafficLoads = async () => {
+      try {
+        const result = await supabase
+          .from('traffic_load')
+          .select('*')
+          .order('camera_id', { ascending: true });
+        if (result.error) throw new Error(result.error.message);
+        setTrafficLoads(result.data || []);
+      } catch (err) {
+        console.error('Failed to fetch traffic_load:', err);
+      }
+    };
+    fetchTrafficLoads();
+    const interval = setInterval(fetchTrafficLoads, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1389,6 +1401,54 @@ function LiveMapSection({ markers }) {
                     </Popup>
                   </Marker>
                 ))}
+
+                {/* ── Traffic-load camera markers (colour-coded by load_level) ── */}
+                {(trafficLoads || []).map((tl) => {
+                  const meta = CAMERA_LOCATIONS.find((c) => c.id === tl.camera_id);
+                  if (!meta || !Number.isFinite(meta.lat) || !Number.isFinite(meta.lng)) return null;
+
+                  const level = tl.load_level || 'low';
+                  const loadColors = {
+                    low: '#10b981',
+                    medium: '#f59e0b',
+                    high: '#f97316',
+                    congested: '#ef4444',
+                  };
+                  const color = loadColors[level] || loadColors.low;
+                  const icon = createMarkerIcon(color, 22);
+
+                  const name = (tl.camera_name || meta.name || '').replace(/-/g, ' ');
+                  const popupLabel = name.charAt(0).toUpperCase() + name.slice(1);
+
+                  return (
+                    <Marker
+                      key={`cam-${tl.camera_id}`}
+                      position={[meta.lat, meta.lng]}
+                      icon={icon}
+                      eventHandlers={{
+                        click: () =>
+                          window.location.assign(`/traffic-analytics#${meta.name}`),
+                      }}
+                    >
+                      <Popup>
+                        <div className="min-w-[180px] p-1 text-sm">
+                          <div className="font-semibold">{popupLabel}</div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            Road load: <span style={{ color, fontWeight: 'bold' }}>{level.toUpperCase()}</span>
+                          </div>
+                          <div className="mt-3 space-y-1 text-xs text-slate-700">
+                            <div>Vehicles: {tl.vehicle_count || 0}</div>
+                            <div>Rolling rate: {tl.rolling_rate?.toFixed(1) || '0.0'} veh/cycle</div>
+                            <div>Updated: {tl.timestamp ? new Date(tl.timestamp).toLocaleTimeString() : '—'}</div>
+                          </div>
+                          <div className="mt-2 text-xs text-tblue-500 underline cursor-pointer">
+                            View analytics →
+                          </div>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })}
               </MapContainer>
 
               <div className="absolute left-4 top-4 rounded-2xl bg-black/55 px-4 py-3 text-xs text-white backdrop-blur-sm">
@@ -1727,6 +1787,7 @@ const TrafficCommandCenter = () => {
     <div className={`min-h-screen transition-colors duration-500 grain ${dark ? 'bg-navy-950 text-gray-200' : 'bg-paper-50 text-gray-800'}`}>
       <SiteHeader />
       <CameraSection />
+      <SnapshotGrid />
       <AIChatSection markers={allTrafficMarkers} />
       <LiveMapSection markers={allTrafficMarkers} />
       <StatusStrip />

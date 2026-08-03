@@ -1,17 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
 
-const dashboardLinks = [
-  { label: 'Camera', to: '/dashboard#video', hash: '#video' },
-  { label: 'AI Chat', to: '/dashboard#ai', hash: '#ai' },
-  { label: 'Live Map', to: '/dashboard#map', hash: '#map' },
-  { label: 'Philosophy', to: '/dashboard#overview', hash: '#overview' },
-  { label: 'About', to: '/dashboard#about', hash: '#about' },
+const navigationLinks = [
+  { label: 'Cameras', to: '/cameras' },
+  { label: 'AI Chat', to: '/ai-chat' },
+  { label: 'Live Map', to: '/live-map' },
 ];
-
-const HEADER_SCROLL_OFFSET = 96;
 
 function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
@@ -55,38 +51,9 @@ const SiteHeader = () => {
 
   useEffect(() => {
     setMobileOpen(false);
-  }, [location.pathname, location.hash]);
+  }, [location.pathname]);
 
-  const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/traffic-command-center';
-
-  const scrollToHash = useCallback((hash, behavior = 'smooth') => {
-    if (!hash) return false;
-
-    const section = document.querySelector(hash);
-    if (!section) return false;
-
-    const top = section.getBoundingClientRect().top + window.scrollY - HEADER_SCROLL_OFFSET;
-    window.scrollTo({ top: Math.max(top, 0), behavior });
-    return true;
-  }, []);
-
-  const isLinkActive = (hash) => {
-    if (!isDashboardRoute) return false;
-    if (hash === '#video') {
-      return !location.hash || location.hash === '#video';
-    }
-    return location.hash === hash;
-  };
-
-  useEffect(() => {
-    if (!isDashboardRoute || !location.hash) return undefined;
-
-    const frameId = window.requestAnimationFrame(() => {
-      scrollToHash(location.hash);
-    });
-
-    return () => window.cancelAnimationFrame(frameId);
-  }, [isDashboardRoute, location.hash, scrollToHash]);
+  const isLinkActive = (path) => location.pathname === path;
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -96,23 +63,6 @@ const SiteHeader = () => {
     } finally {
       setLoggingOut(false);
     }
-  };
-
-  const handleDashboardNavigation = (event, hash) => {
-    event.preventDefault();
-
-    if (!hash) return;
-
-    if (!isDashboardRoute) {
-      navigate(`/dashboard${hash}`);
-      return;
-    }
-
-    if (location.pathname !== '/dashboard' || location.hash !== hash) {
-      navigate(`/dashboard${hash}`);
-    }
-
-    scrollToHash(hash);
   };
 
   const shellClass = scrolled
@@ -130,7 +80,7 @@ const SiteHeader = () => {
   return (
     <nav className={`fixed left-0 right-0 top-0 z-50 transition-all duration-500 ${shellClass}`}>
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-        <Link to="/dashboard" className="flex items-center gap-3 group">
+        <Link to="/cameras" className="flex items-center gap-3 group">
           <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-tblue-500/20">
             <img src="/logo.PNG" alt="SEMAFORI Logo" className="h-8 w-8 object-contain" />
           </div>
@@ -141,12 +91,11 @@ const SiteHeader = () => {
         </Link>
 
         <div className="hidden items-center gap-8 lg:flex">
-          {dashboardLinks.map((link) => (
+          {navigationLinks.map((link) => (
             <Link
-              key={link.hash}
+              key={link.to}
               to={link.to}
-              onClick={(event) => handleDashboardNavigation(event, link.hash)}
-              className={`text-[13px] tracking-wide transition-colors duration-200 ${isLinkActive(link.hash) ? activeClass : navTextClass}`}
+              className={`text-[13px] tracking-wide transition-colors duration-200 ${isLinkActive(link.to) ? activeClass : navTextClass}`}
             >
               {link.label}
             </Link>
@@ -196,12 +145,11 @@ const SiteHeader = () => {
       {mobileOpen && (
         <div className={`animate-slide-up border-t lg:hidden ${dark ? 'border-navy-600/30 bg-navy-900/95 backdrop-blur-xl' : 'border-gray-200 bg-paper-50/95 backdrop-blur-xl'}`}>
           <div className="flex flex-col gap-3 px-6 py-4">
-            {dashboardLinks.map((link) => (
+            {navigationLinks.map((link) => (
               <Link
-                key={link.hash}
+                key={link.to}
                 to={link.to}
-                onClick={(event) => handleDashboardNavigation(event, link.hash)}
-                className={`py-2 text-sm transition-colors ${isLinkActive(link.hash) ? activeClass : dark ? 'text-gray-300 hover:text-tblue-400' : 'text-gray-600 hover:text-tblue-600'}`}
+                className={`py-2 text-sm transition-colors ${isLinkActive(link.to) ? activeClass : dark ? 'text-gray-300 hover:text-tblue-400' : 'text-gray-600 hover:text-tblue-600'}`}
               >
                 {link.label}
               </Link>

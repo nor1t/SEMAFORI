@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../services/supabaseClient';
 import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
@@ -15,473 +14,462 @@ const emptyProfile = {
   department: '',
   role: 'Officer',
   avatar_url: '',
+  bio: '',
+  location: 'Prishtinë, Kosova',
 };
 
-const roleOptions = [
-  { value: 'Officer', label: 'Traffic Officer' },
-  { value: 'Supervisor', label: 'Supervisor' },
-  { value: 'Manager', label: 'Manager' },
-  { value: 'Admin', label: 'Administrator' },
+const recentActivity = [
+  { id: 1, title: 'Reported congestion at Bill Clinton Blvd', time: '2 hours ago', dot: 'bg-orange-500', label: 'Report' },
+  { id: 2, title: 'Incident marker placed at Aktash intersection', time: '5 hours ago', dot: 'bg-red-500', label: 'Marker' },
+  { id: 3, title: 'AI route query: Prishtinë → Ferizaj', time: 'Yesterday at 3:15 PM', dot: 'bg-blue-500', label: 'Query' },
+  { id: 4, title: 'Camera feed switched to Pejton', time: '2 days ago', dot: 'bg-emerald-500', label: 'Monitor' },
+  { id: 5, title: 'Session started on Live Map', time: '3 days ago', dot: 'bg-fuchsia-500', label: 'Session' },
 ];
 
-const getErrorDetails = (error) => `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
-
-const canFallbackToAuthMetadata = (error) => {
-  const details = getErrorDetails(error);
-
-  return (
-    error?.code === 'PGRST205' ||
-    error?.code === '42P01' ||
-    error?.code === '42501' ||
-    error?.status === 401 ||
-    error?.status === 403 ||
-    details.includes('profiles') ||
-    details.includes('row-level security') ||
-    details.includes('permission denied') ||
-    details.includes('not allowed') ||
-    details.includes('relation') ||
-    details.includes('does not exist') ||
-    details.includes('could not find the table')
-  );
-};
+const skillsData = [
+  { name: 'Traffic Monitoring', pct: 92, color: 'bg-orange-500/50' },
+  { name: 'Incident Response', pct: 85, color: 'bg-blue-500/40' },
+  { name: 'Route Planning', pct: 78, color: 'bg-emerald-500/40' },
+  { name: 'Data Analysis', pct: 70, color: 'bg-fuchsia-500/30' },
+  { name: 'AI Assistance', pct: 65, color: 'bg-orange-500/30' },
+];
 
 const Profile = () => {
-  const { user, loading } = useAuth();
-  const { theme } = useTheme();
-  const dark = theme === 'dark';
-
+  const { user, loading: authLoading, signOut } = useAuth();
+  const navigate = useNavigate();
   const [profileData, setProfileData] = useState(emptyProfile);
   const [initialProfileData, setInitialProfileData] = useState(emptyProfile);
   const [avatarPreview, setAvatarPreview] = useState(DEFAULT_AVATAR);
-  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState({ text: '', type: '' });
+  const [toast, setToast] = useState({ text: '', type: 'success', visible: false });
+  const [activeTab, setActiveTab] = useState('profile');
   const [stats, setStats] = useState({ totalReports: 0, activeReports: 0, resolvedReports: 0 });
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [notificationsOn, setNotificationsOn] = useState(true);
+  const [twoFactorOn, setTwoFactorOn] = useState(true);
+  const [publicProfile, setPublicProfile] = useState(false);
 
-  const loadProfile = useCallback(async () => {
+  /* ── Load profile ── */
+  useEffect(() => {
     if (!user) return;
-
-    try {
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (profileError && !canFallbackToAuthMetadata(profileError)) {
-        console.error('Error fetching profile row:', profileError);
-      }
-
-      const nextProfile = {
-        full_name: profile?.full_name || user.user_metadata?.full_name || '',
-        email: user.email || '',
-        phone: profile?.phone || user.user_metadata?.phone || '',
-        department: profile?.department || user.user_metadata?.department || '',
-        role: profile?.role || user.user_metadata?.role || 'Officer',
-        avatar_url: profile?.avatar_url || user.user_metadata?.avatar_url || DEFAULT_AVATAR,
-      };
-
-      setProfileData(nextProfile);
-      setInitialProfileData(nextProfile);
-      setAvatarPreview(nextProfile.avatar_url);
-    } catch (err) {
-      console.error('Error loading profile:', err);
-    }
+    const next = {
+      full_name: user.user_metadata?.full_name || '',
+      email: user.email || '',
+      phone: user.user_metadata?.phone || '',
+      department: user.user_metadata?.department || '',
+      role: user.user_metadata?.role || 'Officer',
+      avatar_url: user.user_metadata?.avatar_url || DEFAULT_AVATAR,
+      bio: user.user_metadata?.bio || '',
+      location: user.user_metadata?.location || 'Prishtinë, Kosova',
+    };
+    setProfileData(next);
+    setInitialProfileData(next);
+    setAvatarPreview(next.avatar_url || DEFAULT_AVATAR);
   }, [user]);
 
-  const loadStats = useCallback(async () => {
+  /* ── Load stats ── */
+  useEffect(() => {
     if (!user) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('user_data')
-        .select('status')
-        .eq('user_id', user.id);
-
-      if (error) throw error;
-
-      const rows = data ?? [];
-      const totalReports = rows.length;
-      const activeReports = rows.filter((item) => item.status === 'active').length;
-      const resolvedReports = rows.filter((item) => item.status === 'cleared').length;
-
-      setStats({ totalReports, activeReports, resolvedReports });
-    } catch (err) {
-      console.error('Error loading stats:', err);
-    }
+    const load = async () => {
+      try {
+        const { data, error } = await supabase.from('user_data').select('status').eq('user_id', user.id);
+        if (error) throw error;
+        const rows = data ?? [];
+        setStats({
+          totalReports: rows.length,
+          activeReports: rows.filter(r => r.status === 'active').length,
+          resolvedReports: rows.filter(r => r.status === 'cleared').length,
+        });
+      } catch {}
+    };
+    load();
   }, [user]);
 
+  /* ── Toast auto-hide ── */
   useEffect(() => {
-    if (user) {
-      loadProfile();
-      loadStats();
+    if (toast.visible) {
+      const id = setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 2500);
+      return () => clearTimeout(id);
     }
-  }, [user, loadProfile, loadStats]);
+  }, [toast.visible]);
 
-  useEffect(() => {
-    document.body.style.background = dark ? '#040810' : '#faf9f5';
-    document.body.style.color = dark ? '#e5e5e5' : '#1a1a1a';
-  }, [dark]);
-
-  const upsertProfileRecord = useCallback(async (profilePatch) => {
-    const { error } = await supabase
-      .from('profiles')
-      .upsert(profilePatch, { onConflict: 'user_id' });
-
-    if (!error) return true;
-
-    if (canFallbackToAuthMetadata(error)) {
-      console.warn('Profiles table is unavailable, falling back to auth metadata.', error);
-      return false;
-    }
-
-    throw error;
-  }, []);
-
-  const updateAuthMetadata = useCallback(async (profilePatch) => {
-    const { error } = await supabase.auth.updateUser({
-      data: profilePatch,
-    });
-
-    if (error) throw error;
-  }, []);
-
-  const handleAvatarChange = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file || !user) return;
-
-    setAvatarUploading(true);
-    const filePath = `avatars/${user.id}/${Date.now()}_${file.name}`;
-
-    try {
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file, { upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicData } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-
-      const publicUrl = publicData.publicUrl;
-
-    // ── Persist the new avatar_url to the profiles table immediately ──
-      await upsertProfileRecord({
-        user_id: user.id,
-        avatar_url: publicUrl,
-        updated_at: new Date().toISOString(),
-      });
-
-      await updateAuthMetadata({ avatar_url: publicUrl });
-
-      setProfileData((prev) => ({ ...prev, avatar_url: publicUrl }));
-      setInitialProfileData((prev) => ({ ...prev, avatar_url: publicUrl }));
-      setAvatarPreview(publicUrl);
-      setMessage({ text: 'Profile picture updated successfully.', type: 'success' });
-    } catch (error) {
-      console.error('Error uploading avatar:', error);
-      setMessage({ text: 'Failed to upload avatar. Check your storage settings.', type: 'error' });
-    } finally {
-      setAvatarUploading(false);
-      window.setTimeout(() => setMessage({ text: '', type: '' }), 3500);
-    }
+  const showToast = (text, type = 'success') => {
+    setToast({ text, type, visible: true });
   };
 
+  /* ── Handle save ── */
   const handleSave = async () => {
     if (!user) return;
+    if (!profileData.full_name.trim()) { showToast('Name is required', 'error'); return; }
     setSaving(true);
-
     try {
-      const updatedProfile = {
-        user_id: user.id,
-        full_name: profileData.full_name,
-        phone: profileData.phone,
-        department: profileData.department,
+      const nextProfile = {
+        full_name: profileData.full_name.trim(),
+        phone: profileData.phone.trim(),
+        department: profileData.department.trim(),
         role: profileData.role,
         avatar_url: profileData.avatar_url,
-        updated_at: new Date().toISOString(),
+        bio: profileData.bio.trim(),
+        location: profileData.location.trim(),
       };
-
-      await upsertProfileRecord(updatedProfile);
-      await updateAuthMetadata({
-        full_name: profileData.full_name,
-        phone: profileData.phone,
-        department: profileData.department,
-        role: profileData.role,
-        avatar_url: profileData.avatar_url,
-      });
-
+      await supabase.auth.updateUser({ data: nextProfile });
+      await supabase.from('profiles').upsert({ user_id: user.id, ...nextProfile, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
       setInitialProfileData(profileData);
-      setMessage({ text: 'Profile updated successfully!', type: 'success' });
-      window.setTimeout(() => setMessage({ text: '', type: '' }), 3000);
+      setEditing(false);
+      showToast('Profile saved');
     } catch (err) {
-      console.error('Error updating profile:', err);
-      setMessage({ text: 'Failed to update profile.', type: 'error' });
-    } finally {
-      setSaving(false);
-    }
+      console.error(err);
+      showToast('Failed to save', 'error');
+    } finally { setSaving(false); }
   };
 
   const handleCancel = () => {
     setProfileData(initialProfileData);
     setAvatarPreview(initialProfileData.avatar_url || DEFAULT_AVATAR);
-    setMessage({ text: '', type: '' });
+    setEditing(false);
+    showToast('Discarded', 'info');
   };
 
-  if (loading) {
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try { await signOut(); navigate('/login'); } finally { setLoggingOut(false); }
+  };
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    try {
+      const filePath = `avatars/${user.id}/${Date.now()}_${file.name}`;
+      const { error: upErr } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const url = pub.publicUrl;
+      setProfileData(prev => ({ ...prev, avatar_url: url }));
+      setAvatarPreview(url);
+      showToast('Photo updated');
+    } catch (err) {
+      console.error(err);
+      showToast('Upload failed', 'error');
+    }
+  };
+
+  if (authLoading) {
     return (
-      <div className={`grain flex min-h-screen items-center justify-center transition-colors duration-500 ${dark ? 'bg-navy-950 text-gray-200' : 'bg-paper-50 text-gray-800'}`}>
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-tblue-500"></div>
+      <div className="flex min-h-screen items-center justify-center" style={{ background: '#09090b' }}>
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
       </div>
     );
   }
 
   const isGuest = !user;
-  const completionFields = [
-    profileData.full_name,
-    profileData.email,
-    profileData.phone,
-    profileData.department,
-    profileData.role,
-    profileData.avatar_url,
-  ];
-  const completion = Math.round((completionFields.filter(Boolean).length / completionFields.length) * 100);
-  const hasChanges = Object.keys(profileData).some((key) => profileData[key] !== initialProfileData[key]);
-
-  const panelClass = dark ? 'border-navy-600/20 bg-navy-900/60' : 'border-gray-200/80 bg-white/90';
-  const secondaryPanelClass = dark ? 'border-slate-800/80 bg-slate-900/80' : 'border-gray-200 bg-white/85';
-  const labelClass = dark ? 'text-slate-200' : 'text-slate-700';
-  const textMutedClass = dark ? 'text-gray-400' : 'text-gray-500';
-  const inputClass = dark
-    ? 'border-slate-700/80 bg-slate-950/90 text-slate-100 focus:border-cyan-400'
-    : 'border-slate-200 bg-white text-slate-800 focus:border-tblue-500';
-  const readonlyInputClass = dark
-    ? 'border-slate-700/80 bg-slate-900/80 text-slate-400'
-    : 'border-slate-200 bg-slate-50 text-slate-500';
-  const ghostButtonClass = dark
-    ? 'border-slate-700/90 bg-slate-950/80 text-slate-200 hover:bg-slate-900'
-    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
-  const messageClass = message.type === 'error'
-    ? dark
-      ? 'border-red-500/30 bg-red-500/10 text-red-200'
-      : 'border-red-200 bg-red-50 text-red-700'
-    : dark
-      ? 'border-green-500/30 bg-green-500/10 text-green-200'
-      : 'border-green-200 bg-green-50 text-green-700';
+  const name = profileData.full_name || 'Traffic Operator';
+  const parts = name.split(' ');
+  const firstName = parts[0] || '';
+  const lastName = parts.slice(1).join(' ') || '';
 
   return (
-    <div className={`grain min-h-screen transition-colors duration-500 ${dark ? 'bg-navy-950 text-gray-200' : 'bg-paper-50 text-gray-800'}`}>
+    <div style={{ background: '#09090b', minHeight: '100vh', color: '#fff' }}>
+      <style>{`
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        .anim { animation: fadeUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .d1{animation-delay:0.03s;opacity:0}.d2{animation-delay:0.08s;opacity:0}.d3{animation-delay:0.13s;opacity:0}.d4{animation-delay:0.18s;opacity:0}.d5{animation-delay:0.23s;opacity:0}
+        .tab-btn{font-size:13px;font-weight:400;color:#52525b;padding:8px 0;position:relative;transition:color 0.2s;cursor:pointer;background:none;border:none}
+        .tab-btn:hover{color:#a1a1aa}
+        .tab-btn.active{color:#fff;font-weight:500}
+        .tab-btn.active::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:1px;background:#fff}
+        .field-group label{display:block;font-size:11px;font-weight:500;color:#3f3f46;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em}
+        .field-display{font-size:14px;font-weight:300;color:#d4d4d8;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.03);min-height:38px;display:flex;align-items:center}
+        .field-input{width:100%;font-size:14px;font-weight:300;color:#fff;background:transparent;border:none;border-bottom:1px solid rgba(249,115,22,0.25);padding:9px 0;outline:none;font-family:Inter,sans-serif;transition:border-color 0.2s}
+        .field-input:focus{border-bottom-color:#f97316}
+        .field-input::placeholder{color:#27272a}
+        textarea.field-input{border:1px solid rgba(249,115,22,0.25);border-radius:8px;padding:10px 12px;resize:none;line-height:1.6}
+        textarea.field-input:focus{border-color:#f97316}
+        .pill{font-size:11px;padding:3px 10px;border-radius:9999px;border:1px solid rgba(255,255,255,0.05);color:#52525b;background:transparent;transition:all 0.2s}
+        .skill-row{display:flex;align-items:center;gap:12px;padding:6px 0}
+        .skill-name{font-size:13px;color:#a1a1aa;font-weight:300;width:130px;flex-shrink:0}
+        .skill-bar-bg{flex:1;height:3px;border-radius:99px;background:rgba(255,255,255,0.04);overflow:hidden}
+        .skill-bar-fill{height:100%;border-radius:99px;transition:width 0.8s cubic-bezier(0.16,1,0.3,1)}
+        .skill-pct{font-size:11px;color:#3f3f46;font-family:monospace;width:30px;text-align:right}
+        .act-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+        .act-item:last-child{border-bottom:none}
+        .act-dot{width:6px;height:6px;border-radius:9999px;margin-top:6px;flex-shrink:0}
+        .bg-glow{position:fixed;width:500px;height:300px;border-radius:9999px;filter:blur(140px);opacity:0.035;pointer-events:none;z-index:-10}
+        ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#1c1c1e;border-radius:99px}
+      `}</style>
+
+      <div className="bg-glow" style={{ top: '-80px', left: '40%', background: '#f97316' }} />
+
       <SiteHeader />
 
-      <main className="mx-auto max-w-6xl px-4 pb-16 pt-28 sm:px-6 lg:px-8">
-        {message.text && (
-          <div className={`mb-6 rounded-3xl border px-5 py-4 text-sm shadow-xl ${messageClass}`}>
-            {message.text}
-          </div>
-        )}
+      {/* Top Bar */}
+      <div className="border-b border-zinc-800/30 pt-14">
+        <div className="max-w-2xl mx-auto px-6 h-12 flex items-center justify-between">
+          <span className="text-[11px] text-zinc-600 font-medium">profile</span>
+          {!isGuest && (
+            <div className="flex items-center gap-2">
+              {!editing ? (
+                <button onClick={() => setEditing(true)} className="text-[11px] text-zinc-500 hover:text-white transition-colors px-2 py-1 rounded">Edit</button>
+              ) : (
+                <>
+                  <button onClick={handleCancel} className="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors px-2 py-1 rounded">Cancel</button>
+                  <button onClick={handleSave} disabled={saving} className="text-[11px] bg-white text-black px-3 py-1 rounded font-semibold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50" style={{ boxShadow: '0 0 12px -4px rgba(255,255,255,0.2)' }}>
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
+      <main className="max-w-2xl mx-auto px-6 pt-10 pb-20">
         {isGuest ? (
-          <div className={`rounded-3xl border p-10 shadow-2xl backdrop-blur-xl ${panelClass}`}>
-            <div className="grid gap-8 lg:grid-cols-2">
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="eastern-line w-10"></div>
-                  <span className={`text-[11px] uppercase tracking-[0.25em] ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Profile Access</span>
-                </div>
-                <h1 className={`font-serif text-3xl font-bold ${dark ? 'text-white' : 'text-navy-900'}`}>Access Your Command Profile</h1>
-                <p className={`max-w-xl text-sm leading-relaxed ${textMutedClass}`} style={{ lineHeight: '1.85' }}>
-                  Sign in or create an account to manage your traffic command profile, update your personal details, and keep your dashboard identity in sync.
-                </p>
-                <div className="flex flex-wrap gap-4 pt-4">
-                  <Link to="/login" className="rounded-2xl bg-tblue-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-tblue-600">
-                    Login
-                  </Link>
-                  <Link
-                    to="/signup"
-                    className={`rounded-2xl border px-6 py-3 text-sm font-semibold transition ${dark ? 'border-tblue-500/30 text-tblue-300 hover:bg-tblue-500/10' : 'border-tblue-500/20 text-tblue-600 hover:bg-tblue-50'}`}
-                  >
-                    Sign Up
-                  </Link>
-                </div>
-              </div>
-
-              <div className={`rounded-3xl border border-dashed p-6 text-center ${dark ? 'border-tblue-500/30 bg-slate-950/30' : 'border-tblue-500/20 bg-tblue-50/60'}`}>
-                <div className={`mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full text-4xl ${dark ? 'bg-tblue-500/10 text-tblue-300' : 'bg-tblue-500/10 text-tblue-500'}`}>
-                  👤
-                </div>
-                <p className={`text-sm ${textMutedClass}`}>
-                  Secure access keeps your profile, role details, and command activity connected to the right account.
-                </p>
-              </div>
+          /* ── Guest View ── */
+          <div className="text-center py-20 anim d1">
+            <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-5">
+              <iconify-icon icon="lucide:user" width="28" className="text-zinc-500" />
+            </div>
+            <h1 className="text-xl font-semibold">Sign in to view your profile</h1>
+            <p className="text-[13px] text-zinc-500 mt-2">Access your traffic command profile and activity</p>
+            <div className="flex justify-center gap-3 mt-6">
+              <Link to="/login" className="px-5 py-2 bg-white text-black text-[13px] font-semibold rounded-lg">Login</Link>
+              <Link to="/signup" className="px-5 py-2 border border-zinc-700 text-zinc-300 text-[13px] font-semibold rounded-lg">Sign Up</Link>
             </div>
           </div>
         ) : (
-          <div className="grid gap-8 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <div className={`rounded-3xl border p-8 shadow-xl backdrop-blur-xl ${panelClass}`}>
-                <div className="flex flex-col gap-6 border-b border-white/10 pb-8 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className={`relative h-28 w-28 overflow-hidden rounded-[2rem] border ${dark ? 'border-slate-700/50 bg-slate-900' : 'border-slate-200 bg-slate-100'}`}>
-                      <img src={avatarPreview} alt="Profile avatar" className="h-full w-full object-cover" />
+          <>
+            {/* Hero */}
+            <div className="flex flex-col items-center text-center anim d1">
+              <div className="relative group mb-4">
+                <label className="cursor-pointer">
+                  <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
+                  <img src={avatarPreview} className="w-20 h-20 rounded-full object-cover border-2 border-zinc-800 transition-all duration-500 group-hover:border-orange-500/40" alt="" />
+                  {editing && (
+                    <div className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                      <iconify-icon icon="lucide:camera" width="16" className="text-white/70" />
                     </div>
-                    <div>
-                      <p className={`text-sm uppercase tracking-[0.25em] ${dark ? 'text-tblue-300/70' : 'text-tblue-600/70'}`}>Command Profile</p>
-                      <p className={`mt-1 text-2xl font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>{profileData.full_name || 'Traffic Operator'}</p>
-                      <p className={`mt-2 text-sm ${textMutedClass}`}>{profileData.role || 'Officer'}{profileData.department ? ` • ${profileData.department}` : ''}</p>
-                    </div>
-                  </div>
+                  )}
+                </label>
+              </div>
+              <h1 className="text-xl font-semibold tracking-tight">{name}</h1>
+              <p className="text-[13px] text-zinc-500 font-light mt-1">{profileData.role === 'Officer' ? 'Traffic Officer' : profileData.role === 'Supervisor' ? 'Traffic Supervisor' : profileData.role === 'Manager' ? 'Traffic Manager' : 'Administrator'}{profileData.department ? ` · ${profileData.department}` : ''}</p>
 
-                  <div className="space-y-3 lg:max-w-xs lg:text-right">
-                    <p className={`text-xs uppercase tracking-[0.3em] ${dark ? 'text-gray-500' : 'text-gray-400'}`}>Profile completeness</p>
-                    <div className={`rounded-full p-1 ${dark ? 'bg-slate-800/80' : 'bg-slate-100'}`}>
-                      <div className="h-2 rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 transition-all duration-300" style={{ width: `${completion}%` }} />
-                    </div>
-                    <p className={`text-sm ${textMutedClass}`}>{completion}% complete</p>
-                  </div>
-                </div>
+              <div className="flex items-center gap-6 mt-5">
+                <div className="text-center"><div className="text-base font-semibold">{stats.totalReports}</div><div className="text-[9px] text-zinc-600 uppercase tracking-widest mt-0.5">Reports</div></div>
+                <div className="w-px h-6 bg-zinc-800/50" />
+                <div className="text-center"><div className="text-base font-semibold text-orange-400">{stats.activeReports}</div><div className="text-[9px] text-zinc-600 uppercase tracking-widest mt-0.5">Active</div></div>
+                <div className="w-px h-6 bg-zinc-800/50" />
+                <div className="text-center"><div className="text-base font-semibold text-emerald-400">{stats.resolvedReports}</div><div className="text-[9px] text-zinc-600 uppercase tracking-widest mt-0.5">Resolved</div></div>
+              </div>
 
-                <div className="mt-8 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Upload Avatar</label>
-                    <label className={`flex cursor-pointer items-center justify-center rounded-2xl border border-dashed px-4 py-4 text-sm transition ${dark ? 'border-slate-600/70 bg-slate-950/80 text-slate-300 hover:border-cyan-400 hover:text-white' : 'border-slate-300 bg-slate-50 text-slate-600 hover:border-tblue-500 hover:bg-white hover:text-slate-800'}`}>
-                      <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
-                      {avatarUploading ? 'Uploading...' : 'Choose a photo'}
-                    </label>
-                  </div>
-                  <div>
-                    <p className={`mb-2 text-sm font-medium ${labelClass}`}>Image preview</p>
-                    <div className={`rounded-3xl border p-4 ${dark ? 'border-slate-700/60 bg-slate-950/80' : 'border-slate-200 bg-slate-50'}`}>
-                      <img src={avatarPreview} alt="Avatar preview" className="h-36 w-full rounded-3xl object-cover" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-8 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Full Name</label>
-                    <input
-                      type="text"
-                      value={profileData.full_name}
-                      onChange={(event) => setProfileData({ ...profileData, full_name: event.target.value })}
-                      className={`w-full rounded-3xl border px-4 py-3 outline-none transition ${inputClass}`}
-                    />
-                  </div>
-                  <div>
-                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Email</label>
-                    <input
-                      type="email"
-                      value={profileData.email}
-                      disabled
-                      className={`w-full rounded-3xl border px-4 py-3 outline-none ${readonlyInputClass}`}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Phone</label>
-                    <input
-                      type="tel"
-                      value={profileData.phone}
-                      onChange={(event) => setProfileData({ ...profileData, phone: event.target.value })}
-                      className={`w-full rounded-3xl border px-4 py-3 outline-none transition ${inputClass}`}
-                    />
-                  </div>
-                  <div>
-                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Department</label>
-                    <input
-                      type="text"
-                      value={profileData.department}
-                      onChange={(event) => setProfileData({ ...profileData, department: event.target.value })}
-                      className={`w-full rounded-3xl border px-4 py-3 outline-none transition ${inputClass}`}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-6">
-                  <label className={`mb-2 block text-sm font-medium ${labelClass}`}>Role</label>
-                  <select
-                    value={profileData.role}
-                    onChange={(event) => setProfileData({ ...profileData, role: event.target.value })}
-                    className={`w-full rounded-3xl border px-4 py-3 outline-none transition ${inputClass}`}
-                  >
-                    {roleOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                  <button
-                    onClick={handleSave}
-                    disabled={saving || !hasChanges}
-                    className="flex-1 rounded-3xl bg-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {saving ? 'Saving changes...' : 'Save profile'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    disabled={!hasChanges}
-                    className={`flex-1 rounded-3xl border px-6 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${ghostButtonClass}`}
-                  >
-                    Cancel
-                  </button>
-                </div>
+              {/* Tags */}
+              <div className="flex flex-wrap justify-center gap-1.5 mt-4">
+                {[
+                  `Role: ${profileData.role}`,
+                  profileData.department || 'General',
+                  `ID: ${user.id.slice(0, 8)}…`,
+                ].map((t, i) => (
+                  <span key={i} className="pill">{t}</span>
+                ))}
+                <span className="pill" style={{ color: '#10b981', borderColor: 'rgba(16,185,129,0.15)' }}>Verified</span>
               </div>
             </div>
 
-            <div className="space-y-6">
-              <div className={`rounded-3xl border p-6 shadow-xl backdrop-blur-xl ${secondaryPanelClass}`}>
-                <h3 className={`mb-4 text-lg font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>Insights</h3>
-                <div className={`space-y-4 text-sm ${textMutedClass}`}>
-                  <div className="flex items-center justify-between">
-                    <span>Total Reports</span>
-                    <span className={`font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>{stats.totalReports}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Active Incidents</span>
-                    <span className="font-semibold text-cyan-400">{stats.activeReports}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Resolved Cases</span>
-                    <span className="font-semibold text-emerald-400">{stats.resolvedReports}</span>
-                  </div>
-                  <div className={`rounded-2xl border p-4 ${dark ? 'border-white/5 bg-white/5' : 'border-slate-100 bg-slate-50'}`}>
-                    <span className={`block text-xs uppercase tracking-[0.3em] ${dark ? 'text-slate-500' : 'text-slate-400'}`}>Account ID</span>
-                    <p className={`mt-2 break-all text-sm ${dark ? 'text-slate-300' : 'text-slate-600'}`}>{user.id}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className={`rounded-3xl border p-6 shadow-xl backdrop-blur-xl ${secondaryPanelClass}`}>
-                <h3 className={`mb-4 text-lg font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>Quick Access</h3>
-                <div className="space-y-3">
-                  <Link
-                    to="/dashboard"
-                    className={`block rounded-2xl border px-4 py-3 text-sm font-medium transition ${dark ? 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10' : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'}`}
-                  >
-                    Return to dashboard
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      loadProfile();
-                      loadStats();
-                    }}
-                    className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-medium transition ${dark ? 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10' : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'}`}
-                  >
-                    Refresh profile data
-                  </button>
-                </div>
-              </div>
+            {/* Tabs */}
+            <div className="mt-10 border-b border-zinc-800/40 flex gap-6 anim d2">
+              {['Profile', 'Skills', 'Activity', 'Settings'].map(t => (
+                <button key={t} className={`tab-btn ${activeTab === t.toLowerCase() ? 'active' : ''}`} onClick={() => setActiveTab(t.toLowerCase())}>{t}</button>
+              ))}
             </div>
-          </div>
+
+            {/* ═══ Profile Tab ═══ */}
+            {activeTab === 'profile' && (
+              <div className="mt-8 anim d3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-0">
+                  <div className="field-group">
+                    <label>Full Name</label>
+                    {editing ? (
+                      <input type="text" className="field-input" value={profileData.full_name} onChange={e => setProfileData(prev => ({ ...prev, full_name: e.target.value }))} placeholder="Full name" />
+                    ) : (
+                      <div className="field-display">{name}</div>
+                    )}
+                  </div>
+                  <div className="field-group">
+                    <label>Email</label>
+                    <div className="flex items-center gap-2">
+                      <div className="field-display flex-1">{profileData.email}</div>
+                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500/70 font-semibold uppercase tracking-wider flex-shrink-0">✓</span>
+                    </div>
+                  </div>
+                  <div className="field-group">
+                    <label>Role</label>
+                    {editing ? (
+                      <select className="field-input" value={profileData.role} onChange={e => setProfileData(prev => ({ ...prev, role: e.target.value }))} style={{ appearance: 'none' }}>
+                        {['Officer', 'Supervisor', 'Manager', 'Admin'].map(r => (
+                          <option key={r} value={r} style={{ background: '#18181b', color: '#fff' }}>{r === 'Officer' ? 'Traffic Officer' : r === 'Supervisor' ? 'Traffic Supervisor' : r === 'Manager' ? 'Traffic Manager' : 'Administrator'}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="field-display">{profileData.role === 'Officer' ? 'Traffic Officer' : profileData.role === 'Supervisor' ? 'Traffic Supervisor' : profileData.role === 'Manager' ? 'Traffic Manager' : 'Administrator'}</div>
+                    )}
+                  </div>
+                  <div className="field-group">
+                    <label>Department</label>
+                    {editing ? (
+                      <input type="text" className="field-input" value={profileData.department} onChange={e => setProfileData(prev => ({ ...prev, department: e.target.value }))} placeholder="Department" />
+                    ) : (
+                      <div className="field-display">{profileData.department || '—'}</div>
+                    )}
+                  </div>
+                  <div className="field-group">
+                    <label>Phone</label>
+                    {editing ? (
+                      <input type="tel" className="field-input" value={profileData.phone} onChange={e => setProfileData(prev => ({ ...prev, phone: e.target.value }))} placeholder="Phone number" />
+                    ) : (
+                      <div className="field-display">{profileData.phone || '—'}</div>
+                    )}
+                  </div>
+                  <div className="field-group">
+                    <label>Location</label>
+                    {editing ? (
+                      <input type="text" className="field-input" value={profileData.location} onChange={e => setProfileData(prev => ({ ...prev, location: e.target.value }))} placeholder="Location" />
+                    ) : (
+                      <div className="field-display">{profileData.location || '—'}</div>
+                    )}
+                  </div>
+                  <div className="field-group sm:col-span-2">
+                    <label>Bio</label>
+                    {editing ? (
+                      <textarea className="field-input" rows={3} value={profileData.bio} onChange={e => setProfileData(prev => ({ ...prev, bio: e.target.value }))} placeholder="Tell us about yourself…" />
+                    ) : (
+                      <div className="field-display" style={{ whiteSpace: 'pre-line', lineHeight: 1.7 }}>{profileData.bio || 'No bio yet.'}</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Edit actions moved below */}
+                {editing && (
+                  <div className="flex items-center gap-3 mt-8 pt-6 border-t border-zinc-800/30 anim d4">
+                    <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-white text-black text-[13px] font-semibold rounded-lg hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50" style={{ boxShadow: '0 0 12px -4px rgba(255,255,255,0.2)' }}>
+                      {saving ? 'Saving…' : 'Save Changes'}
+                    </button>
+                    <button onClick={handleCancel} className="px-6 py-2 text-[13px] text-zinc-500 hover:text-white transition-colors rounded-lg">Cancel</button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ═══ Skills Tab ═══ */}
+            {activeTab === 'skills' && (
+              <div className="mt-8 anim d3">
+                <div className="space-y-1">
+                  {skillsData.map(s => (
+                    <div key={s.name} className="skill-row">
+                      <span className="skill-name">{s.name}</span>
+                      <div className="skill-bar-bg"><div className={`skill-bar-fill ${s.color}`} style={{ width: `${s.pct}%` }} /></div>
+                      <span className="skill-pct">{s.pct}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Activity Tab ═══ */}
+            {activeTab === 'activity' && (
+              <div className="mt-8 anim d3">
+                {recentActivity.map(a => (
+                  <div key={a.id} className="act-item">
+                    <div className={`act-dot ${a.dot}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] text-zinc-300 font-light">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 font-medium mr-1.5 uppercase">{a.label}</span>
+                        {a.title}
+                      </p>
+                      <p className="text-[11px] text-zinc-700 mt-0.5">{a.time}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ═══ Settings Tab ═══ */}
+            {activeTab === 'settings' && (
+              <div className="mt-8 anim d3 space-y-6">
+                <div>
+                  <h3 className="text-[11px] font-medium text-zinc-600 uppercase tracking-wider mb-3">Connected Services</h3>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-3">
+                        <iconify-icon icon="lucide:database" width="16" className="text-zinc-400" />
+                        <span className="text-[13px] text-zinc-300 font-light">Supabase</span>
+                      </div>
+                      <span className="text-[10px] text-emerald-500/70">Connected</span>
+                    </div>
+                    <div className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-3">
+                        <iconify-icon icon="lucide:cpu" width="16" className="text-orange-400/60" />
+                        <span className="text-[13px] text-zinc-300 font-light">Groq AI</span>
+                      </div>
+                      <span className="text-[10px] text-emerald-500/70">Connected</span>
+                    </div>
+                    <div className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-3">
+                        <iconify-icon icon="lucide:video" width="16" className="text-blue-400/60" />
+                        <span className="text-[13px] text-zinc-300 font-light">Gjirafa Cameras</span>
+                      </div>
+                      <span className="text-[10px] text-zinc-600">Active</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-px bg-zinc-800/30" />
+
+                <div>
+                  <h3 className="text-[11px] font-medium text-zinc-600 uppercase tracking-wider mb-3">Preferences</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-[13px] text-zinc-400 font-light">Notifications</span>
+                      <button onClick={() => setNotificationsOn(!notificationsOn)} className="w-9 h-5 rounded-full relative transition-colors" style={{ background: notificationsOn ? '#f97316' : '#27272a' }}>
+                        <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-200" style={{ left: notificationsOn ? '16px' : '2px' }} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-[13px] text-zinc-400 font-light">Two-factor auth</span>
+                      <button onClick={() => setTwoFactorOn(!twoFactorOn)} className="w-9 h-5 rounded-full relative transition-colors" style={{ background: twoFactorOn ? '#f97316' : '#27272a' }}>
+                        <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-200" style={{ left: twoFactorOn ? '16px' : '2px' }} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-[13px] text-zinc-400 font-light">Public profile</span>
+                      <button onClick={() => setPublicProfile(!publicProfile)} className="w-9 h-5 rounded-full relative transition-colors" style={{ background: publicProfile ? '#f97316' : '#27272a' }}>
+                        <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-200" style={{ left: publicProfile ? '16px' : '2px' }} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-px bg-zinc-800/30" />
+
+                <div>
+                  <h3 className="text-[11px] font-medium text-zinc-600 uppercase tracking-wider mb-3">Account</h3>
+                  <div className="space-y-2">
+                    <button onClick={handleLogout} disabled={loggingOut} className="w-full text-left py-2 text-[13px] text-red-500/40 hover:text-red-400 transition-colors disabled:opacity-50">
+                      {loggingOut ? 'Signing out…' : 'Sign out'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </main>
+
+      {/* Toast */}
+      <div className="fixed bottom-8 left-1/2 z-[100] px-4 py-2 rounded-lg text-[12px] text-zinc-300 font-medium flex items-center gap-2 transition-all duration-300 pointer-events-none" style={{ background: 'rgba(24,24,27,0.9)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(10px)', opacity: toast.visible ? 1 : 0, transform: toast.visible ? 'translate(-50%, 0)' : 'translate(-50%, 12px)' }}>
+        <iconify-icon icon={toast.type === 'error' ? 'lucide:x-circle' : toast.type === 'info' ? 'lucide:minus-circle' : 'lucide:check'} width="12" className={toast.type === 'error' ? 'text-red-400' : toast.type === 'info' ? 'text-zinc-500' : 'text-emerald-400'} />
+        <span>{toast.text}</span>
+      </div>
 
       <SiteFooter />
     </div>

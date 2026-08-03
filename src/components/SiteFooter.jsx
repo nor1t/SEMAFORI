@@ -6,31 +6,29 @@ const footerColumns = [
   {
     title: 'Platform',
     links: [
-      { label: 'Overview', to: '/dashboard#overview' },
-      { label: 'Live Map', to: '/dashboard#map' },
-      { label: 'AI Assistant', to: '/dashboard#ai' },
+      { label: 'Live Cameras', to: '/cameras' },
+      { label: 'AI Chat', to: '/ai-chat' },
+      { label: 'Live Map', to: '/live-map' },
       { label: 'Profile', to: '/profile' },
-      { label: 'About', to: '/dashboard#about' },
     ],
   },
   {
     title: 'Operations',
     links: [
-      { label: 'Traffic Flow', to: '/dashboard#overview' },
-      { label: 'Incident Monitoring', to: '/dashboard#map' },
-      { label: 'Forecasting', to: '/dashboard#ai' },
-      { label: 'Command Center', to: '/dashboard' },
-      { label: 'Response Insights', to: '/dashboard#about' },
+      { label: 'Camera Monitoring', to: '/cameras' },
+      { label: 'AI Route Guidance', to: '/ai-chat' },
+      { label: 'Map & Markers', to: '/live-map' },
+      { label: 'Profile Settings', to: '/profile' },
     ],
   },
   {
     title: 'Access',
     links: [
-      { label: 'Dashboard', to: '/dashboard' },
-      { label: 'Profile Settings', to: '/profile' },
+      { label: 'Cameras', to: '/cameras' },
+      { label: 'AI Chat', to: '/ai-chat' },
+      { label: 'Live Map', to: '/live-map' },
       { label: 'Sign In', to: '/login' },
       { label: 'Create Account', to: '/signup' },
-      { label: 'Live Overview', to: '/dashboard#overview' },
     ],
   },
 ];
