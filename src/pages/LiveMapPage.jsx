@@ -1,110 +1,87 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useTheme } from '../context/ThemeContext';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import useTrafficData from '../hooks/useTrafficData';
 import { createIncidentReport, fetchIncidentReports } from '../services/reportService';
-import { supabase } from '../services/supabaseClient';
-import { MapContainer, Marker, Popup, TileLayer, useMapEvents, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { APIProvider, Map, Marker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import {
-  baseTrafficMarkers,
   buildMarkerDescription,
   CAMERA_LOCATIONS,
-  severityMeta,
-  typeIcons,
   MAP_CENTER,
   isPersistedMapMarker,
   reportToMapMarker,
   getLoadColor,
+  getLoadLabel,
 } from '../shared/trafficData';
 import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
 
-function rng(min, max) { return min + Math.random() * (max - min); }
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-/* ── Marker icon factories ── */
-function createSeverityIcon(severity, emergency) {
-  const colors = { severe: '#ef4444', high: '#f97316', moderate: '#facc15', low: '#4ade80', custom: '#06b6d4' };
-  const color = colors[severity] || '#a1a1aa';
-  return L.divIcon({
-    html: `<div class="custom-marker" style="position:relative;cursor:pointer">
-      <div style="position:absolute;inset:-6px;border-radius:9999px;opacity:0.4;background:${color};animation:pulseRing 2s cubic-bezier(0.215,0.61,0.355,1) infinite"></div>
-      <div style="width:14px;height:14px;border-radius:9999px;background:${color};border:2px solid rgba(255,255,255,0.9);position:relative;z-index:2;${emergency ? 'box-shadow:0 0 12px ' + color : ''}"></div>
-    </div>`,
-    className: severity === 'severe' || emergency ? 'marker-active' : '',
-    iconSize: [14, 14],
-    iconAnchor: [7, 7],
-  });
-}
+/* ── Dark style for the Google base map (matches the #09090b theme) ── */
+const DARK_MAP_STYLES = [
+  { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#4b6878' }] },
+  { featureType: 'administrative.land_parcel', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#98a5be' }] },
+  { featureType: 'road', elementType: 'labels.text.stroke', stylers: [{ color: '#1d2c4d' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2c6675' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#255763' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#4e6d70' }] },
+];
 
-function createCameraIcon(color) {
-  return L.divIcon({
-    html: `<div style="width:16px;height:16px;border-radius:9999px;background:${color};border:2px solid rgba(255,255,255,0.9);box-shadow:0 0 8px ${color}"></div>`,
-    className: '',
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
-  });
-}
+/* ── Colored circle marker icon (load level / severity) ── */
+const circleIcon = (color, scale = 8) => ({
+  path: window.google?.maps?.SymbolPath?.CIRCLE ?? 0,
+  fillColor: color,
+  fillOpacity: 1,
+  strokeColor: 'rgba(255,255,255,0.9)',
+  strokeWeight: 2,
+  scale,
+});
 
-/* ── MapClickHandler ── */
-function MapClickHandler({ onPick, enabled }) {
-  useMapEvents({
-    click(event) {
-      if (enabled) onPick(event.latlng);
-    },
-  });
-  return null;
-}
-
-/* ── MapController: fly to marker ── */
+/* ── MapController: pan to the selected marker ── */
 function MapController({ center, zoom }) {
   const map = useMap();
   useEffect(() => {
-    if (center) map.flyTo(center, zoom || 15, { duration: 0.8 });
+    if (!center || !map) return;
+    map.panTo(center);
+    if (zoom) map.moveCamera({ zoom });
   }, [center, zoom, map]);
   return null;
 }
 
-/* ── CoordsDisplay ── */
-function CoordsDisplay() {
-  const [coords, setCoords] = useState('0° N, 0° E');
-  useMapEvents({
-    mousemove(e) {
-      const lat = e.latlng.lat.toFixed(4);
-      const lng = Math.abs(e.latlng.lng).toFixed(4);
-      const dir = e.latlng.lng < 0 ? 'W' : 'E';
-      setCoords(`${lat}° N, ${lng}° ${dir}`);
-    },
-  });
-  return (
-    <div className="absolute bottom-5 right-[380px] z-[500] glass-panel rounded-lg px-3 py-1.5">
-      <span className="text-[10px] font-mono text-zinc-500">{coords}</span>
-    </div>
-  );
-}
-
-/* ── Sparkline ── */
+/* ── Sparkline: last N real cycle counts ── */
 function Sparkline({ data }) {
   const max = Math.max(...data, 1);
   return (
     <div className="flex items-end gap-[3px] h-16">
       {data.map((v, i) => (
-        <div key={i} className="flex-1 rounded-sm" style={{ height: Math.max(4, (v / max * 100)) + '%', background: 'rgba(249,115,22,0.35)', transition: 'height 0.5s ease' }} />
+        <div key={i} className="flex-1 rounded-sm" style={{ height: Math.max(4, (v / max) * 100) + '%', background: 'rgba(249,115,22,0.35)', transition: 'height 0.5s ease' }} />
       ))}
+      {data.length === 0 && <span className="text-[10px] text-zinc-600">no data yet</span>}
     </div>
   );
 }
 
+const prettyCamName = (slug) =>
+  (slug || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 const LiveMapPage = () => {
   const { user } = useAuth();
-  const savedMarkersRef = useRef([]);
+  const { loads, counts } = useTrafficData();
+  const [reports, setReports] = useState([]);
   const [savedMarkers, setSavedMarkers] = useState([]);
   const [markersLoading, setMarkersLoading] = useState(true);
   const [markerError, setMarkerError] = useState('');
   const [savingMarker, setSavingMarker] = useState(false);
   const [selectedMarker, setSelectedMarker] = useState(null);
-  const [trafficLoads, setTrafficLoads] = useState([]);
-  const [navClock, setNavClock] = useState('');
+  const [coords, setCoords] = useState('');
 
   // Form state
   const [activeTab, setActiveTab] = useState('report');
@@ -119,47 +96,21 @@ const LiveMapPage = () => {
   const [emergency, setEmergency] = useState(false);
   const [mapPickMode, setMapPickMode] = useState(false);
 
-  // Stats
-  const [footSevere, setFootSevere] = useState(2);
-  const [footActive, setFootActive] = useState(7);
-  const [footResolved, setFootResolved] = useState(23);
-
-  const combinedMarkers = useMemo(() => [...baseTrafficMarkers, ...savedMarkers], [savedMarkers]);
-
-  /* ── Clock ── */
-  useEffect(() => {
-    const id = setInterval(() => setNavClock(new Date().toLocaleTimeString('en-US', { hour12: false })), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  /* ── Traffic loads ── */
-  useEffect(() => {
-    const fetchTL = async () => {
-      try {
-        const r = await supabase.from('traffic_load').select('*').order('camera_id');
-        if (!r.error) setTrafficLoads(r.data || []);
-      } catch {}
-    };
-    fetchTL();
-    const id = setInterval(fetchTL, 30000);
-    return () => clearInterval(id);
-  }, []);
-
-  /* ── Load persisted markers ── */
+  /* ── Load persisted user markers + reports (real data) ── */
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!user?.id) { setSavedMarkers([]); setMarkersLoading(false); return; }
+      if (!user?.id) { setSavedMarkers([]); setReports([]); setMarkersLoading(false); return; }
       setMarkersLoading(true);
       setMarkerError('');
       try {
-        const reports = await fetchIncidentReports(user.id);
+        const rows = await fetchIncidentReports(user.id);
         if (cancelled) return;
-        const persisted = reports
-          .filter(r => isPersistedMapMarker(r) && Number.isFinite(Number(r.location?.lat)) && Number.isFinite(Number(r.location?.lng)))
+        setReports(rows || []);
+        const persisted = (rows || [])
+          .filter((r) => isPersistedMapMarker(r) && Number.isFinite(Number(r.location?.lat)) && Number.isFinite(Number(r.location?.lng)))
           .map(reportToMapMarker);
         setSavedMarkers(persisted);
-        savedMarkersRef.current = persisted;
       } catch (err) {
         if (!cancelled) { console.error(err); setMarkerError(err?.message || 'Failed to load markers.'); }
       } finally { if (!cancelled) setMarkersLoading(false); }
@@ -168,7 +119,29 @@ const LiveMapPage = () => {
     return () => { cancelled = true; };
   }, [user?.id]);
 
-  /* ── Submit report ── */
+  /* ── Camera markers from live traffic_load (real) ── */
+  const cameraMarkers = CAMERA_LOCATIONS.map((cam) => {
+    const load = loads.find((l) => l.camera_id === cam.id) || {};
+    return {
+      id: `cam-${cam.id}`,
+      cameraId: cam.id,
+      isCamera: true,
+      lat: cam.lat,
+      lng: cam.lng,
+      label: prettyCamName(cam.name),
+      load_level: load.load_level || 'low',
+      vehicle_count: Number(load.vehicle_count) || 0,
+      rolling_rate: Number(load.rolling_rate) || 0,
+      updated: load.timestamp || null,
+    };
+  });
+
+  /* ── Footer counters — real, from the user's reports ── */
+  const severeCount = reports.filter((r) => r.severity === 'major').length;
+  const activeCount = reports.filter((r) => r.status === 'active').length;
+  const resolvedCount = reports.filter((r) => r.status === 'cleared').length;
+
+  /* ── Submit report (persists a real marker to Supabase) ── */
   const handleSubmit = async () => {
     if (!incidentType) { setMarkerError('Select an incident type'); return; }
     if (!severity) { setMarkerError('Select severity level'); return; }
@@ -179,22 +152,26 @@ const LiveMapPage = () => {
     setSavingMarker(true);
     setMarkerError('');
 
+    const detailLines = [
+      desc.trim(),
+      `Lanes affected: ${lanes} · Est. duration: ${duration}${emergency ? ' · EMERGENCY' : ''}`,
+    ].join('\n');
+
     try {
       const report = await createIncidentReport(user.id, {
         title: incidentType.charAt(0).toUpperCase() + incidentType.slice(1),
-        description: buildMarkerDescription(desc),
+        description: buildMarkerDescription(detailLines),
         type: incidentType === 'accident' ? 'accident' : incidentType === 'construction' ? 'construction' : 'congestion',
-        severity: severity === 'severe' ? 'critical' : severity === 'high' ? 'major' : severity === 'moderate' ? 'minor' : 'minor',
+        severity: severity === 'severe' ? 'critical' : severity === 'high' ? 'major' : 'minor',
         status: 'active',
         location: { lat: pickLat, lng: pickLng },
       });
 
       const saved = reportToMapMarker(report);
-      setSavedMarkers(prev => [saved, ...prev]);
+      setSavedMarkers((prev) => [saved, ...prev]);
+      setReports((prev) => [report, ...prev]);
       setSelectedMarker(saved);
-      setFootActive(prev => prev + 1);
 
-      // Reset form
       setIncidentType(''); setSeverity(null); setPickLat(null); setPickLng(null);
       setPickLoc(''); setDesc(''); setLanes('2'); setDuration('30-60min'); setEmergency(false);
       setMapPickMode(false);
@@ -207,19 +184,12 @@ const LiveMapPage = () => {
   };
 
   const handleMapPick = (latlng) => {
+    if (!latlng) return;
     setPickLat(latlng.lat);
     setPickLng(latlng.lng);
     setPickLoc(`${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`);
     setMapPickMode(false);
-    document.querySelector('.leaflet-container')?.style.setProperty('cursor', '');
   };
-
-  const enableMapPick = () => {
-    setMapPickMode(true);
-    document.querySelector('.leaflet-container')?.style.setProperty('cursor', 'crosshair');
-  };
-
-  const ci = selectedMarker ? (selectedMarker.avgSpeed ? Math.round(80 - selectedMarker.avgSpeed * 1.5) : 50) : 0;
 
   return (
     <div style={{ background: '#09090b', minHeight: '100vh', color: '#fff' }}>
@@ -231,11 +201,6 @@ const LiveMapPage = () => {
         .progress-track { background: rgba(255,255,255,0.06); border-radius: 9999px; overflow: hidden; height: 4px; }
         .progress-fill { height: 100%; border-radius: 9999px; transition: width 0.8s cubic-bezier(0.16,1,0.3,1); }
         .bg-glow { position: fixed; border-radius: 9999px; filter: blur(120px); opacity: 0.04; pointer-events: none; z-index: -10; }
-        .leaflet-tile-pane { filter: saturate(0.3) brightness(0.35) contrast(1.2); }
-        .leaflet-control-zoom { border: none !important; }
-        .leaflet-control-zoom a { background: rgba(24,24,27,0.9) !important; color: #a1a1aa !important; border: 1px solid rgba(255,255,255,0.08) !important; backdrop-filter: blur(10px); width: 32px !important; height: 32px !important; line-height: 32px !important; font-size: 14px !important; }
-        .leaflet-control-zoom a:hover { background: rgba(39,39,42,0.95) !important; color: #fff !important; }
-        .leaflet-control-attribution { display: none !important; }
         .form-input { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 8px 12px; font-size: 12px; color: #fff; outline: none; width: 100%; transition: border-color 0.3s ease, box-shadow 0.3s ease; }
         .form-input:focus { border-color: rgba(249,115,22,0.3); box-shadow: 0 0 0 3px rgba(249,115,22,0.08); }
         .form-input::placeholder { color: #3f3f46; }
@@ -247,7 +212,6 @@ const LiveMapPage = () => {
         .severity-btn.active-severe { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: #ef4444; }
         .right-scroll::-webkit-scrollbar { width: 4px; } .right-scroll::-webkit-scrollbar-track { background: transparent; } .right-scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 9999px; }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes pulseRing { 0% { transform: scale(0.9); opacity: 0.6; } 100% { transform: scale(1.6); opacity: 0; } }
         .anim { animation: fadeInUp 0.7s cubic-bezier(0.16,1,0.3,1) forwards; }
         .d1{animation-delay:0.05s;opacity:0}.d2{animation-delay:0.1s;opacity:0}.d3{animation-delay:0.15s;opacity:0}.d4{animation-delay:0.2s;opacity:0}.d5{animation-delay:0.25s;opacity:0}
         .incident-item { transition: all 0.3s ease; cursor: pointer; }
@@ -260,53 +224,111 @@ const LiveMapPage = () => {
       <SiteHeader />
 
       <main className="pt-14 h-screen flex">
-        {/* ══════════ Map Area ══════════ */}
+
+        {/* ══════════ Map Area (Google Maps) ══════════ */}
         <div className="flex-1 relative anim d1">
-          <MapContainer center={MAP_CENTER} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false} attributionControl={false} className="h-full w-full">
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-            <MapClickHandler onPick={handleMapPick} enabled={mapPickMode} />
-            <MapController center={selectedMarker ? [selectedMarker.lat, selectedMarker.lng] : null} zoom={selectedMarker ? 15 : null} />
-            <CoordsDisplay />
-
-            {/* Built-in markers */}
-            {combinedMarkers.map(m => (
-              <Marker
-                key={m.id}
-                position={[m.lat, m.lng]}
-                icon={createSeverityIcon(m.severity, false)}
-                eventHandlers={{ click: () => setSelectedMarker(m) }}
+          {!GOOGLE_MAPS_API_KEY ? (
+            <div className="h-full flex flex-col items-center justify-center text-center px-6">
+              <iconify-icon icon="lucide:map-pin-off" width="28" className="text-zinc-600" />
+              <p className="mt-3 text-sm text-zinc-400 font-medium">Google Maps API key missing</p>
+              <p className="mt-1 text-[11px] text-zinc-600 max-w-xs">Set VITE_GOOGLE_MAPS_API_KEY in .env.local (and in Vercel env vars for production), then restart/redeploy.</p>
+            </div>
+          ) : (
+            <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
+              <Map
+                defaultCenter={{ lat: MAP_CENTER[0], lng: MAP_CENTER[1] }}
+                defaultZoom={13}
+                mapTypeId="roadmap"
+                styles={DARK_MAP_STYLES}
+                disableDefaultUI
+                zoomControl
+                gestureHandling="greedy"
+                draggableCursor={mapPickMode ? 'crosshair' : ''}
+                onClick={(e) => { if (mapPickMode) handleMapPick(e.detail?.latLng); }}
+                onMousemove={(e) => {
+                  const ll = e.detail?.latLng;
+                  if (ll) setCoords(`${ll.lat.toFixed(4)}° N, ${ll.lng.toFixed(4)}° E`);
+                }}
+                style={{ width: '100%', height: '100%' }}
               >
-                <Popup><div className="text-sm p-1 min-w-[160px]"><div className="font-semibold text-zinc-200">{m.label}</div><div className="text-xs text-zinc-500 mt-1">{m.road}</div><div className="mt-2 text-xs text-zinc-400">Vehicles: {m.vehicles} | Speed: {m.avgSpeed} km/h</div></div></Popup>
-              </Marker>
-            ))}
+                <MapController
+                  center={selectedMarker ? { lat: selectedMarker.lat, lng: selectedMarker.lng } : null}
+                  zoom={selectedMarker ? 15 : null}
+                />
 
-            {/* Camera markers */}
-            {trafficLoads.map(tl => {
-              const meta = CAMERA_LOCATIONS.find(c => c.id === tl.camera_id);
-              if (!meta || !Number.isFinite(meta.lat)) return null;
-              const color = getLoadColor(tl.load_level || 'low');
-              return (
-                <Marker key={`cam-${tl.camera_id}`} position={[meta.lat, meta.lng]} icon={createCameraIcon(color)}>
-                  <Popup><div className="text-sm p-1"><div className="font-semibold text-zinc-200">{meta.name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</div><div className="text-xs text-zinc-500 mt-1">Load: {tl.load_level || 'low'} · {tl.vehicle_count || 0} veh</div></div></Popup>
-                </Marker>
-              );
-            })}
-          </MapContainer>
+                {/* Camera markers — live load colors (real data) */}
+                {cameraMarkers.map((m) => (
+                  <Marker
+                    key={m.id}
+                    position={{ lat: m.lat, lng: m.lng }}
+                    icon={circleIcon(getLoadColor(m.load_level), 9)}
+                    onClick={() => setSelectedMarker(m)}
+                  />
+                ))}
+
+                {/* User-persisted report markers (real data) */}
+                {savedMarkers.map((m) => (
+                  <Marker
+                    key={m.id}
+                    position={{ lat: m.lat, lng: m.lng }}
+                    icon={circleIcon('#06b6d4', 7)}
+                    onClick={() => setSelectedMarker(m)}
+                  />
+                ))}
+
+                {/* Picked location preview */}
+                {pickLat && pickLng && (
+                  <Marker position={{ lat: pickLat, lng: pickLng }} icon={circleIcon('#f97316', 7)} />
+                )}
+
+                {selectedMarker && (
+                  <InfoWindow
+                    position={{ lat: selectedMarker.lat, lng: selectedMarker.lng }}
+                    onCloseClick={() => setSelectedMarker(null)}
+                  >
+                    <div style={{ color: '#18181b', fontSize: '12px', minWidth: '170px', fontFamily: 'DM Sans, sans-serif' }}>
+                      <div style={{ fontWeight: 600, fontSize: '13px' }}>{selectedMarker.label}</div>
+                      {selectedMarker.isCamera ? (
+                        <div style={{ marginTop: '4px', color: '#52525b' }}>
+                          Load: <b>{getLoadLabel(selectedMarker.load_level)}</b> · {selectedMarker.vehicle_count} vehicles now
+                          <br />Rolling rate: {selectedMarker.rolling_rate}/cycle
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: '4px', color: '#52525b', whiteSpace: 'pre-line' }}>{selectedMarker.note}</div>
+                      )}
+                      <div style={{ marginTop: '6px', fontSize: '10px', color: '#a1a1aa' }}>Open the Stats tab for full details →</div>
+                    </div>
+                  </InfoWindow>
+                )}
+              </Map>
+            </APIProvider>
+          )}
+
+          {/* Coordinates readout */}
+          {coords && (
+            <div className="absolute bottom-5 right-[380px] z-[500] glass-panel rounded-lg px-3 py-1.5">
+              <span className="text-[10px] font-mono text-zinc-500">{coords}</span>
+            </div>
+          )}
 
           {/* Legend */}
-          <div className="absolute bottom-5 left-5 z-[500] glass-panel rounded-xl p-3.5" style={{ minWidth: 160 }}>
-            <div className="text-[9px] font-semibold uppercase tracking-widest text-zinc-500 mb-2.5">Severity Legend</div>
+          <div className="absolute bottom-5 left-5 z-[500] glass-panel rounded-xl p-3.5" style={{ minWidth: 170 }}>
+            <div className="text-[9px] font-semibold uppercase tracking-widest text-zinc-500 mb-2.5">Camera Load</div>
             {[
-              { label: 'Severe', color: '#ef4444' },
-              { label: 'High', color: '#f97316' },
-              { label: 'Moderate', color: '#facc15' },
-              { label: 'Low', color: '#4ade80' },
-            ].map(s => (
+              { label: 'Low', color: getLoadColor('low') },
+              { label: 'Medium', color: getLoadColor('medium') },
+              { label: 'High', color: getLoadColor('high') },
+              { label: 'Congested', color: getLoadColor('congested') },
+            ].map((s) => (
               <div key={s.label} className="flex items-center gap-2.5 mb-2">
                 <div className="w-3 h-3 rounded-full border border-white/40" style={{ background: s.color }} />
                 <span className="text-[11px] text-zinc-400">{s.label}</span>
               </div>
             ))}
+            <div className="flex items-center gap-2.5 pt-1 border-t border-zinc-800/50">
+              <div className="w-3 h-3 rounded-full border border-white/40" style={{ background: '#06b6d4' }} />
+              <span className="text-[11px] text-zinc-400">Your reports</span>
+            </div>
           </div>
         </div>
 
@@ -319,7 +341,7 @@ const LiveMapPage = () => {
               <span className="text-sm font-semibold tracking-tight">Command Panel</span>
             </div>
             <div className="flex items-center gap-1">
-              {['Report', 'Incidents', 'Stats'].map(t => (
+              {['Report', 'Incidents', 'Stats'].map((t) => (
                 <button key={t} onClick={() => setActiveTab(t.toLowerCase())} className={`px-3 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider transition-all ${activeTab === t.toLowerCase() ? 'bg-white/5 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>{t}</button>
               ))}
             </div>
@@ -331,7 +353,7 @@ const LiveMapPage = () => {
               <div className="p-4 space-y-4 anim d2">
                 <div>
                   <label className="stat-label block mb-1.5">Incident Type</label>
-                  <select className="form-input" value={incidentType} onChange={e => setIncidentType(e.target.value)}>
+                  <select className="form-input" value={incidentType} onChange={(e) => setIncidentType(e.target.value)}>
                     <option value="">Select type...</option>
                     <option value="accident">Traffic Accident</option>
                     <option value="construction">Construction Zone</option>
@@ -345,7 +367,7 @@ const LiveMapPage = () => {
                 <div>
                   <label className="stat-label block mb-1.5">Severity</label>
                   <div className="flex gap-2">
-                    {['low', 'moderate', 'high', 'severe'].map(s => (
+                    {['low', 'moderate', 'high', 'severe'].map((s) => (
                       <button key={s} onClick={() => setSeverity(s)} className={`severity-btn ${severity === s ? 'active-' + (s === 'moderate' ? 'mod' : s) : ''}`}>
                         {s === 'moderate' ? 'Mod' : s.charAt(0).toUpperCase() + s.slice(1)}
                       </button>
@@ -356,20 +378,20 @@ const LiveMapPage = () => {
                 <div>
                   <label className="stat-label block mb-1.5">Location</label>
                   <input type="text" className="form-input" value={pickLoc} readOnly placeholder="Click map or tap crosshair..." />
-                  <button onClick={enableMapPick} className="mt-1 text-[10px] text-zinc-500 hover:text-orange-400 flex items-center gap-1">
+                  <button onClick={() => setMapPickMode(true)} className="mt-1 text-[10px] text-zinc-500 hover:text-orange-400 flex items-center gap-1">
                     <iconify-icon icon="lucide:crosshair" width="12" /> {mapPickMode ? 'Click anywhere on the map...' : 'Pick from map'}
                   </button>
                 </div>
 
                 <div>
                   <label className="stat-label block mb-1.5">Description</label>
-                  <textarea className="form-input" rows={3} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe the incident..." style={{ resize: 'none', lineHeight: 1.5 }} />
+                  <textarea className="form-input" rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Describe the incident..." style={{ resize: 'none', lineHeight: 1.5 }} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="stat-label block mb-1.5">Lanes Affected</label>
-                    <select className="form-input" value={lanes} onChange={e => setLanes(e.target.value)}>
+                    <select className="form-input" value={lanes} onChange={(e) => setLanes(e.target.value)}>
                       <option value="1">1 Lane</option>
                       <option value="2">2 Lanes</option>
                       <option value="3">3 Lanes</option>
@@ -378,7 +400,7 @@ const LiveMapPage = () => {
                   </div>
                   <div>
                     <label className="stat-label block mb-1.5">Est. Duration</label>
-                    <select className="form-input" value={duration} onChange={e => setDuration(e.target.value)}>
+                    <select className="form-input" value={duration} onChange={(e) => setDuration(e.target.value)}>
                       <option value="< 30min">Less than 30min</option>
                       <option value="30-60min">30 – 60 min</option>
                       <option value="1-2hrs">1 – 2 hours</option>
@@ -389,7 +411,7 @@ const LiveMapPage = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <input type="checkbox" checked={emergency} onChange={e => setEmergency(e.target.checked)} className="accent-orange-500 w-3.5 h-3.5 rounded" />
+                  <input type="checkbox" checked={emergency} onChange={(e) => setEmergency(e.target.checked)} className="accent-orange-500 w-3.5 h-3.5 rounded" />
                   <label className="text-[11px] text-zinc-400 cursor-pointer">Mark as emergency</label>
                 </div>
 
@@ -408,31 +430,48 @@ const LiveMapPage = () => {
             {activeTab === 'incidents' && (
               <div>
                 <div className="px-4 pt-3 pb-2 flex items-center justify-between">
-                  <span className="stat-label">Active Incidents</span>
-                  <span className="text-[10px] font-mono text-zinc-500">{combinedMarkers.length} total</span>
+                  <span className="stat-label">Cameras (live)</span>
+                  <span className="text-[10px] font-mono text-zinc-500">{cameraMarkers.length}</span>
                 </div>
-                <div className="px-2 pb-4 space-y-1">
-                  {[...baseTrafficMarkers, ...savedMarkers].map(m => {
-                    const sevColor = { severe: 'red', high: 'orange', moderate: 'yellow', low: 'emerald', custom: 'cyan' }[m.severity] || 'zinc';
-                    return (
-                      <div key={m.id} onClick={() => { setSelectedMarker(m); setActiveTab('stats'); }} className="incident-item rounded-xl p-3 mx-1">
-                        <div className="flex items-start gap-3">
-                          <div className={`w-2 h-2 rounded-full bg-${sevColor}-500 mt-1.5 flex-shrink-0`} />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[12px] font-medium text-zinc-200 truncate">{m.label}</span>
-                            </div>
-                            <p className="text-[10px] text-zinc-500 mt-0.5 truncate">{m.road}</p>
-                            <div className="flex items-center gap-3 mt-1.5">
-                              <span className="text-[9px] text-zinc-600">{m.vehicles} veh</span>
-                              <span className="text-[9px] text-zinc-600">{m.avgSpeed} km/h</span>
-                            </div>
+                <div className="px-2 pb-2 space-y-1">
+                  {cameraMarkers.map((m) => (
+                    <div key={m.id} onClick={() => { setSelectedMarker(m); setActiveTab('stats'); }} className="incident-item rounded-xl p-3 mx-1">
+                      <div className="flex items-start gap-3">
+                        <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: getLoadColor(m.load_level) }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[12px] font-medium text-zinc-200 truncate">{m.label}</span>
+                            <span className="text-[9px] font-mono text-zinc-500 uppercase">{m.load_level}</span>
                           </div>
+                          <p className="text-[10px] text-zinc-500 mt-0.5">{m.vehicle_count} vehicles · {m.rolling_rate}/cycle</p>
                         </div>
                       </div>
-                    );
-                  })}
-                  {savedMarkers.length === 0 && <p className="text-center text-zinc-600 text-[11px] py-4">No saved markers yet</p>}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="px-4 pt-2 pb-2 flex items-center justify-between border-t border-zinc-800/50">
+                  <span className="stat-label">Your reports</span>
+                  <span className="text-[10px] font-mono text-zinc-500">{savedMarkers.length} total</span>
+                </div>
+                <div className="px-2 pb-4 space-y-1">
+                  {savedMarkers.map((m) => (
+                    <div key={m.id} onClick={() => { setSelectedMarker(m); setActiveTab('stats'); }} className="incident-item rounded-xl p-3 mx-1">
+                      <div className="flex items-start gap-3">
+                        <div className="w-2 h-2 rounded-full bg-cyan-500 mt-1.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[12px] font-medium text-zinc-200 truncate">{m.label}</span>
+                          <p className="text-[10px] text-zinc-500 mt-0.5 truncate">{m.note}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {savedMarkers.length === 0 && !markersLoading && (
+                    <p className="text-center text-zinc-600 text-[11px] py-4">No saved markers yet — submit a report.</p>
+                  )}
+                  {markersLoading && (
+                    <p className="text-center text-zinc-600 text-[11px] py-4">Loading…</p>
+                  )}
                 </div>
               </div>
             )}
@@ -445,78 +484,31 @@ const LiveMapPage = () => {
                     <div className="w-12 h-12 rounded-xl bg-zinc-800/50 flex items-center justify-center mb-3">
                       <iconify-icon icon="lucide:mouse-pointer-click" width="20" className="text-zinc-600" />
                     </div>
-                    <p className="text-[12px] text-zinc-500 font-light">Click a marker on the map to view location statistics</p>
+                    <p className="text-[12px] text-zinc-500 font-light">Click a camera or report marker on the map to view real statistics</p>
                   </div>
+                ) : selectedMarker.isCamera ? (
+                  <CameraStats marker={selectedMarker} counts={counts} />
                 ) : (
                   <div className="p-4 space-y-4">
-                    {/* Header */}
                     <div className="anim d1">
                       <div className="flex items-start justify-between mb-1">
                         <h3 className="text-sm font-semibold tracking-tight">{selectedMarker.label}</h3>
-                        <span className="text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700/30 text-zinc-400">
-                          {selectedMarker.severity}
+                        <span className="text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                          your report
                         </span>
                       </div>
                       <p className="text-[11px] text-zinc-500 flex items-center gap-1 mt-1">
                         <iconify-icon icon="lucide:map-pin" width="12" />
-                        {selectedMarker.road}
+                        {selectedMarker.lat?.toFixed(4)}, {selectedMarker.lng?.toFixed(4)}
                       </p>
                     </div>
-
-                    {/* Description */}
                     <div className="glass-card rounded-xl p-3.5 anim d2">
-                      <p className="text-[12px] text-zinc-400 font-light leading-relaxed">{selectedMarker.note}</p>
-                      <div className="flex items-center gap-4 mt-3 pt-3 border-t border-zinc-800/60">
-                        <div><div className="stat-label">Vehicles</div><div className="text-[12px] font-mono text-zinc-300">{selectedMarker.vehicles || 0}</div></div>
-                        <div><div className="stat-label">Speed</div><div className="text-[12px] text-zinc-300">{selectedMarker.avgSpeed || 0} km/h</div></div>
-                        <div><div className="stat-label">Coords</div><div className="text-[12px] text-zinc-300">{selectedMarker.lat?.toFixed(4)}, {selectedMarker.lng?.toFixed(4)}</div></div>
-                      </div>
-                    </div>
-
-                    {/* Location stats */}
-                    <div className="anim d3">
-                      <div className="flex items-center gap-2 mb-3">
-                        <iconify-icon icon="lucide:bar-chart-3" width="14" className="text-zinc-500" />
-                        <span className="stat-label">Location Statistics</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        {[
-                          { label: 'Daily Traffic', val: (selectedMarker.vehicles * 12).toLocaleString(), color: '' },
-                          { label: 'Avg Speed', val: `${selectedMarker.avgSpeed || 0} km/h`, color: '' },
-                          { label: 'Congestion', val: `${Math.max(25, Math.min(95, ci))}%`, color: ci > 80 ? 'text-red-400' : ci > 50 ? 'text-orange-400' : 'text-emerald-400' },
-                          { label: 'Peak Hour', val: '5–6 PM', color: '' },
-                        ].map(s => (
-                          <div key={s.label} className="glass-card rounded-xl p-3 text-center">
-                            <div className={`text-lg font-semibold ${s.color}`}>{s.val}</div>
-                            <div className="stat-label mt-0.5">{s.label}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Congestion bar */}
-                    <div className="glass-card rounded-xl p-4 anim d4">
-                      <div className="space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-zinc-500">Congestion Level</span>
-                          <span className="text-[11px] font-mono text-zinc-300">{ci}%</span>
+                      <p className="text-[12px] text-zinc-400 font-light leading-relaxed" style={{ whiteSpace: 'pre-line' }}>{selectedMarker.note}</p>
+                      {selectedMarker.createdAt && (
+                        <div className="mt-3 pt-3 border-t border-zinc-800/60 text-[10px] text-zinc-600">
+                          Reported {new Date(selectedMarker.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </div>
-                        <div className="progress-track">
-                          <div className="progress-fill" style={{ width: `${ci}%`, background: ci > 80 ? '#ef4444' : ci > 50 ? '#f97316' : '#4ade80' }} />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Sparkline */}
-                    <div className="glass-card rounded-xl p-4 anim d5">
-                      <div className="flex items-center gap-2 mb-3">
-                        <iconify-icon icon="lucide:activity" width="14" className="text-zinc-500" />
-                        <span className="stat-label">Hourly Traffic Pattern</span>
-                      </div>
-                      <Sparkline data={Array.from({ length: 16 }, () => (selectedMarker.vehicles || 100) * (0.3 + Math.random() * 1.0) * (ci / 50))} />
-                      <div className="flex justify-between mt-1.5 text-[8px] text-zinc-600 font-mono">
-                        <span>6AM</span><span>9AM</span><span>12PM</span><span>3PM</span><span>6PM</span><span>9PM</span>
-                      </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -524,19 +516,19 @@ const LiveMapPage = () => {
             )}
           </div>
 
-          {/* Panel Footer */}
+          {/* Panel Footer — real counters from user reports */}
           <div className="flex-shrink-0 border-t border-zinc-800/50 px-4 py-3">
             <div className="grid grid-cols-3 gap-3">
               <div className="text-center">
-                <div className="text-lg font-semibold text-red-400">{footSevere}</div>
+                <div className="text-lg font-semibold text-red-400">{severeCount}</div>
                 <div className="text-[8px] font-medium uppercase tracking-wide text-zinc-500">Severe</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-semibold text-orange-400">{footActive}</div>
+                <div className="text-lg font-semibold text-orange-400">{activeCount}</div>
                 <div className="text-[8px] font-medium uppercase tracking-wide text-zinc-500">Active</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-semibold text-emerald-400">{footResolved}</div>
+                <div className="text-lg font-semibold text-emerald-400">{resolvedCount}</div>
                 <div className="text-[8px] font-medium uppercase tracking-wide text-zinc-500">Resolved</div>
               </div>
             </div>
@@ -548,5 +540,73 @@ const LiveMapPage = () => {
     </div>
   );
 };
+
+/* ── Camera stats panel (real 24h data from traffic_counts) ── */
+function CameraStats({ marker, counts }) {
+  const camCounts = counts.filter((r) => r.camera_id === marker.cameraId);
+  const series = camCounts.slice(-24).map((r) => Number(r.vehicle_count) || 0);
+  const avgRate = camCounts.length
+    ? (camCounts.reduce((s, r) => s + (Number(r.vehicle_count) || 0), 0) / camCounts.length).toFixed(1)
+    : '—';
+  const peakRow = camCounts.reduce(
+    (best, r) => ((Number(r.vehicle_count) || 0) > (Number(best?.vehicle_count) || -1) ? r : best),
+    null,
+  );
+  const peakLabel = peakRow
+    ? `${peakRow.vehicle_count} at ${new Date(peakRow.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
+    : '—';
+  const updatedLabel = marker.updated
+    ? new Date(marker.updated).toLocaleTimeString('en-GB', { hour12: false })
+    : '—';
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="anim d1">
+        <div className="flex items-start justify-between mb-1">
+          <h3 className="text-sm font-semibold tracking-tight">{marker.label}</h3>
+          <span
+            className="text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border"
+            style={{
+              color: getLoadColor(marker.load_level),
+              background: getLoadColor(marker.load_level) + '1a',
+              borderColor: getLoadColor(marker.load_level) + '33',
+            }}
+          >
+            {getLoadLabel(marker.load_level)}
+          </span>
+        </div>
+        <p className="text-[11px] text-zinc-500 flex items-center gap-1 mt-1">
+          <iconify-icon icon="lucide:video" width="12" />
+          Live camera · updated {updatedLabel}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5 anim d2">
+        {[
+          { label: 'Vehicles now', val: marker.vehicle_count },
+          { label: 'Rolling rate', val: `${marker.rolling_rate}/cyc` },
+          { label: 'Avg / cycle (24h)', val: avgRate },
+          { label: 'Peak (24h)', val: peakLabel },
+        ].map((s) => (
+          <div key={s.label} className="glass-card rounded-xl p-3 text-center">
+            <div className="text-base font-semibold">{s.val}</div>
+            <div className="stat-label mt-0.5">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="glass-card rounded-xl p-4 anim d3">
+        <div className="flex items-center gap-2 mb-3">
+          <iconify-icon icon="lucide:activity" width="14" className="text-zinc-500" />
+          <span className="stat-label">Last cycles (real counts)</span>
+        </div>
+        <Sparkline data={series} />
+        <div className="flex justify-between mt-1.5 text-[8px] text-zinc-600 font-mono">
+          <span>older</span><span>latest</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default LiveMapPage;

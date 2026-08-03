@@ -13,6 +13,7 @@
     "@supabase/supabase-js": "^2.100.0",
     "@tensorflow-models/coco-ssd": "^2.2.3",
     "@tensorflow/tfjs": "^4.22.0",
+    "@vis.gl/react-google-maps": "^1.9.0",
     "groq-sdk": "^0.7.0",
     "hls.js": "^1.6.16",
     "leaflet": "^1.9.4",
