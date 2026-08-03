@@ -56,6 +56,18 @@ function MapController({ center, zoom }) {
   return null;
 }
 
+/* ── Google live traffic layer (real-time road speeds, colored roads) ── */
+function TrafficLayerControl({ visible }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map || !window.google?.maps?.TrafficLayer) return undefined;
+    const layer = new window.google.maps.TrafficLayer();
+    if (visible) layer.setMap(map);
+    return () => layer.setMap(null);
+  }, [map, visible]);
+  return null;
+}
+
 /* ── Sparkline: last N real cycle counts ── */
 function Sparkline({ data }) {
   const max = Math.max(...data, 1);
@@ -96,6 +108,7 @@ const LiveMapPage = () => {
   const [emergency, setEmergency] = useState(false);
   const [mapPickMode, setMapPickMode] = useState(false);
   const [mapType, setMapType] = useState('roadmap');
+  const [showTraffic, setShowTraffic] = useState(true);
 
   /* ── Load persisted user markers + reports (real data) ── */
   useEffect(() => {
@@ -256,6 +269,7 @@ const LiveMapPage = () => {
                   center={selectedMarker ? { lat: selectedMarker.lat, lng: selectedMarker.lng } : null}
                   zoom={selectedMarker ? 15 : null}
                 />
+                <TrafficLayerControl visible={showTraffic} />
 
                 {/* Camera markers — live load colors (real data) */}
                 {cameraMarkers.map((m) => (
@@ -321,6 +335,15 @@ const LiveMapPage = () => {
                   {t.label}
                 </button>
               ))}
+              <div className="w-px bg-zinc-700/50 mx-0.5" />
+              <button
+                onClick={() => setShowTraffic((v) => !v)}
+                className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all flex items-center gap-1 ${showTraffic ? 'bg-orange-500/15 text-orange-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                title="Google live traffic layer — real-time road speeds"
+              >
+                <iconify-icon icon="lucide:traffic-cone" width="11" />
+                Traffic
+              </button>
             </div>
           )}
 
@@ -349,6 +372,21 @@ const LiveMapPage = () => {
               <div className="w-3 h-3 rounded-full border border-white/40" style={{ background: '#06b6d4' }} />
               <span className="text-[11px] text-zinc-400">Your reports</span>
             </div>
+            {showTraffic && (
+              <>
+                <div className="text-[9px] font-semibold uppercase tracking-widest text-zinc-500 mb-2 mt-3 pt-2 border-t border-zinc-800/50">Google Traffic</div>
+                {[
+                  { label: 'Fast', color: '#22c55e' },
+                  { label: 'Moderate', color: '#f97316' },
+                  { label: 'Slow', color: '#ef4444' },
+                ].map((s) => (
+                  <div key={s.label} className="flex items-center gap-2.5 mb-2">
+                    <div className="w-3 h-1.5 rounded-full" style={{ background: s.color }} />
+                    <span className="text-[11px] text-zinc-400">{s.label}</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
 
