@@ -204,7 +204,42 @@ export function reportToMapMarker(report) {
   };
 }
 
-export function buildRouteFallback(routeContext, markers) {
+export function buildLiveNetworkSummary(loads, counts) {
+  const pretty = (slug) => (slug || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+  if (!Array.isArray(loads) || loads.length === 0) {
+    return 'Live camera network: no data yet — the detection pipeline may be warming up or offline. Do not invent numbers; say the data is unavailable.';
+  }
+
+  const perCam = loads
+    .map((l) => `${pretty(l.camera_name)}: ${Number(l.vehicle_count) || 0} vehicles visible, load ${l.load_level || 'low'}, rolling rate ${Number(l.rolling_rate) || 0}/cycle`)
+    .join(' | ');
+  const total = loads.reduce((s, l) => s + (Number(l.vehicle_count) || 0), 0);
+  const busiest = [...loads].sort(
+    (a, b) => (Number(b.vehicle_count) || 0) - (Number(a.vehicle_count) || 0),
+  )[0];
+
+  let peakLine = '';
+  if (Array.isArray(counts) && counts.length > 0) {
+    const peak = counts.reduce(
+      (best, row) => ((Number(row.vehicle_count) || 0) > (Number(best.vehicle_count) || 0) ? row : best),
+      counts[0],
+    );
+    const peakTime = new Date(peak.timestamp);
+    const hhmm = Number.isNaN(peakTime.getTime())
+      ? ''
+      : peakTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    peakLine = ` Busiest single cycle in the last 24h: ${Number(peak.vehicle_count) || 0} vehicles at ${pretty(peak.camera_name)} around ${hhmm}.`;
+  }
+
+  const lastUpdate = loads[0]?.timestamp
+    ? new Date(loads[0].timestamp).toLocaleTimeString('en-GB', { hour12: false })
+    : 'unknown time';
+
+  return `LIVE camera network state (updated ${lastUpdate}): ${perCam}. Network total: ${total} vehicles currently visible across ${loads.length} cameras in Prishtina. Busiest right now: ${pretty(busiest.camera_name)} with ${Number(busiest.vehicle_count) || 0} vehicles (${busiest.load_level || 'low'} load).${peakLine} These are real counts from the YOLO + ByteTrack detection pipeline (cycles every 5 minutes) — quote them directly when answering.`;
+}
+
+export function buildRouteFallback(routeContext, liveSummary) {
   if (routeContext?.ok) {
     const alternatives = routeContext.alternatives.length
       ? ` Alternate options: ${routeContext.alternatives.join(' | ')}.`
@@ -214,6 +249,8 @@ export function buildRouteFallback(routeContext, markers) {
   if (routeContext?.error) {
     return `${routeContext.error} Try asking again in the format "from Prishtine to Ferizaj" so I can build the route preview and map links.`;
   }
-  const busiest = [...markers].sort((left, right) => right.vehicles - left.vehicles)[0];
-  return `The busiest monitored point right now is ${busiest.label} on ${busiest.road}. It is carrying about ${busiest.vehicles} vehicles with an average speed of ${busiest.avgSpeed} km/h. If you give me a route in the format "from A to B", I can also estimate the drive and prepare map links.`;
+  const summaryText = typeof liveSummary === 'string' && liveSummary
+    ? liveSummary
+    : 'Live camera data is unavailable right now.';
+  return `${summaryText} If you give me a route in the format "from A to B", I can also estimate the drive and prepare map links.`;
 }

@@ -1,11 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useTheme } from '../context/ThemeContext';
+import React, { useEffect, useRef, useState } from 'react';
 import { groq } from '../services/groqService';
-import { supabase } from '../services/supabaseClient';
 import {
-  baseTrafficMarkers,
+  buildLiveNetworkSummary,
   buildRouteFallback,
-  buildTrafficSummary,
   detectRouteRequest,
   formatDistance,
   formatTravelTime,
@@ -13,12 +10,11 @@ import {
   CAMERA_LOCATIONS,
   getLoadColor,
 } from '../shared/trafficData';
+import useTrafficData from '../hooks/useTrafficData';
 import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-
-function rng(min, max) { return min + Math.random() * (max - min); }
 
 /* ── Route helpers ── */
 async function geocodePlace(query, signal) {
@@ -98,8 +94,8 @@ async function fetchRouteContext(routeRequest) {
   } finally { window.clearTimeout(timeoutId); }
 }
 
-async function getAssistantReply({ message, history, markers, routeContext }) {
-  const fallbackContent = buildRouteFallback(routeContext, markers);
+async function getAssistantReply({ message, history, liveSummary, routeContext }) {
+  const fallbackContent = buildRouteFallback(routeContext, liveSummary);
   if (!groq) {
     return { content: fallbackContent, links: routeContext?.ok ? routeContext.links : [], source: routeContext?.ok ? routeContext.source : 'Local fallback' };
   }
@@ -114,7 +110,7 @@ async function getAssistantReply({ message, history, markers, routeContext }) {
       max_completion_tokens: 420,
       messages: [
         { role: 'system', content: 'You are the SEMAFORI traffic command assistant. Give practical traffic advice. If route data is provided, use it directly. Keep answers concise, mention the route source when route data exists, and never claim live data from Google Maps, Waze, or Apple Maps unless you only provide launch links for them.' },
-        { role: 'user', content: `${buildTrafficSummary(markers)}\n${routeSummary}\nUser request: ${message}` },
+        { role: 'user', content: `${liveSummary}\n${routeSummary}\nUser request: ${message}` },
         ...conversation,
       ],
     });
@@ -126,79 +122,42 @@ async function getAssistantReply({ message, history, markers, routeContext }) {
 }
 
 const quickPrompts = [
-  'How bad is traffic near Bill Clinton Boulevard right now?',
+  'How is traffic near Pejton right now?',
+  'Which camera is the busiest right now?',
   'Give me a route from Prishtine to Ferizaj.',
-  'Which intersection should be prioritized for signal tuning?',
 ];
 
 const AIChatPage = () => {
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
-  const allTrafficMarkers = useMemo(() => baseTrafficMarkers, []);
+  const {
+    loads,
+    counts,
+    networkCongestion,
+    avgConfidence,
+    directionToday,
+    peaks,
+  } = useTrafficData();
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
   const [messages, setMessages] = useState([
-    { id: 'assistant-welcome', role: 'assistant', content: 'Ask me about congestion, junction priorities, or a route in the format "from A to B". I can estimate the drive and add launch links for Google Maps, Waze, and Apple Maps.', links: [], source: 'SEMAFORI AI', timestamp: new Date() },
+    { id: 'assistant-welcome', role: 'assistant', content: 'Ask me about congestion, junction priorities, or a route in the format "from A to B". I answer with live counts from the four Prishtina cameras and can add launch links for Google Maps, Waze, and Apple Maps.', links: [], source: 'SEMAFORI AI', timestamp: new Date() },
   ]);
-  const [clock, setClock] = useState('');
   const [sessionStart] = useState(new Date());
   const [sessionTime, setSessionTime] = useState('0:00');
-  const [snapshots, setSnapshots] = useState([]);
 
-  // Stats
-  const [vehicles, setVehicles] = useState(1247);
-  const [speed, setSpeed] = useState(34);
-  const [congestion, setCongestion] = useState(62);
-  const [waitTime, setWaitTime] = useState(42);
-  const [dirN, setDirN] = useState(384);
-  const [dirS, setDirS] = useState(312);
-  const [dirE, setDirE] = useState(298);
-  const [dirW, setDirW] = useState(253);
-
-  /* Clock & session timer */
+  /* Session timer */
   useEffect(() => {
     const id = setInterval(() => {
-      setClock(new Date().toLocaleTimeString('en-US', { hour12: false }));
       const diff = Math.floor((Date.now() - sessionStart.getTime()) / 1000);
       setSessionTime(`${Math.floor(diff / 60)}:${String(diff % 60).padStart(2, '0')}`);
     }, 1000);
     return () => clearInterval(id);
   }, [sessionStart]);
 
-  /* Supabase snapshots */
-  useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const result = await supabase.from('traffic_load').select('*').order('camera_id', { ascending: true });
-        if (!result.error) setSnapshots(result.data || []);
-      } catch { /* ignore */ }
-    };
-    fetchAll();
-    const interval = setInterval(fetchAll, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  /* Supabase snapshots — replaced by useTrafficData (loads) */
 
-  /* Stats simulation */
-  useEffect(() => {
-    const id = setInterval(() => {
-      setVehicles(v => Math.max(1100, Math.min(1400, v + Math.floor(rng(-5, 10)))));
-      setSpeed(s => Math.max(18, Math.min(52, s + rng(-2.5, 2))));
-      setCongestion(c => Math.max(20, Math.min(95, c + rng(-3, 3))));
-      setWaitTime(w => Math.max(15, Math.min(75, w + rng(-3, 3))));
-    }, 3000);
-    return () => clearInterval(id);
-  }, []);
-
-  /* Direction counts */
-  useEffect(() => {
-    const id = setInterval(() => {
-      setDirN(Math.round(vehicles * rng(0.26, 0.32)));
-      setDirS(Math.round(vehicles * rng(0.22, 0.28)));
-      setDirE(Math.round(vehicles * rng(0.20, 0.26)));
-      setDirW(vehicles - dirN - dirS - dirE || 250);
-    }, 3000);
-    return () => clearInterval(id);
-  }, [vehicles, dirN, dirS, dirE]);
+  /* Stats come from useTrafficData — no simulation intervals remain. */
 
   /* Scroll on new messages */
   useEffect(() => {
@@ -221,7 +180,7 @@ const AIChatPage = () => {
     try {
       const routeRequest = detectRouteRequest(nextInput);
       const routeContext = routeRequest ? await fetchRouteContext(routeRequest) : null;
-      const reply = await getAssistantReply({ message: nextInput, history, markers: allTrafficMarkers, routeContext });
+      const reply = await getAssistantReply({ message: nextInput, history, liveSummary, routeContext });
       setMessages((prev) => [...prev, { id: `assistant-${Date.now()}`, role: 'assistant', content: reply.content, links: reply.links, source: reply.source, timestamp: new Date() }]);
     } finally { setTyping(false); }
   };
@@ -235,9 +194,16 @@ const AIChatPage = () => {
     ));
   };
 
-  const ci = Math.round(congestion);
-  const nsWait = Math.round(waitTime * 0.9);
-  const ewWait = Math.round(waitTime * 1.12);
+  const liveSummary = buildLiveNetworkSummary(loads, counts);
+  const networkVehicles = loads.reduce((s, l) => s + (Number(l.vehicle_count) || 0), 0);
+  const ci = networkCongestion;
+  const confPct = avgConfidence != null ? Math.round(avgConfidence * 100) : null;
+  const peakTimeLabel = peaks
+    ? new Date(peaks.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    : '—';
+  const peakCamLabel = peaks
+    ? (peaks.camera_name || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    : '—';
 
   return (
     <div style={{ background: '#09090b', minHeight: '100vh', color: '#fff' }}>
@@ -412,12 +378,12 @@ const AIChatPage = () => {
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="glass-card rounded-xl p-3">
-                  <div className="stat-label mb-1">Vehicles/hr</div>
-                  <div className="text-lg font-semibold">{Math.round(vehicles).toLocaleString()}</div>
+                  <div className="stat-label mb-1">Vehicles now</div>
+                  <div className="text-lg font-semibold">{networkVehicles.toLocaleString()}</div>
                 </div>
                 <div className="glass-card rounded-xl p-3">
-                  <div className="stat-label mb-1">Avg Speed</div>
-                  <div className="text-lg font-semibold">{Math.round(speed)}<span className="text-xs text-zinc-500 ml-0.5">km/h</span></div>
+                  <div className="stat-label mb-1">Detection conf.</div>
+                  <div className="text-lg font-semibold">{confPct != null ? confPct : '—'}<span className="text-xs text-zinc-500 ml-0.5">%</span></div>
                 </div>
                 <div className="glass-card rounded-xl p-3">
                   <div className="stat-label mb-1">Congestion</div>
@@ -443,55 +409,55 @@ const AIChatPage = () => {
               </div>
             </div>
 
-            {/* Direction Breakdown */}
-            <div className="px-4 pb-4 anim d4">
-              <div className="glass-card rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <iconify-icon icon="lucide:compass" width="14" className="text-zinc-500" />
-                  <span className="stat-label">By Direction</span>
-                </div>
-                <div className="space-y-2.5">
-                  {[
-                    { label: 'Northbound', icon: 'lucide:arrow-up', val: dirN, color: 'bg-orange-500' },
-                    { label: 'Southbound', icon: 'lucide:arrow-down', val: dirS, color: 'bg-blue-500' },
-                    { label: 'Eastbound', icon: 'lucide:arrow-right', val: dirE, color: 'bg-emerald-500' },
-                    { label: 'Westbound', icon: 'lucide:arrow-left', val: dirW, color: 'bg-fuchsia-500' },
-                  ].map(d => (
-                    <div key={d.label}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-zinc-400 flex items-center gap-1.5">
-                          <iconify-icon icon={d.icon} width="12" className="text-zinc-500" /> {d.label}
-                        </span>
-                        <span className="text-[11px] font-mono text-zinc-300">{d.val}</span>
+            {/* Line Crossings Today — real in/out from the counting lines */}
+            {directionToday.hasData && (
+              <div className="px-4 pb-4 anim d4">
+                <div className="glass-card rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <iconify-icon icon="lucide:compass" width="14" className="text-zinc-500" />
+                    <span className="stat-label">Line Crossings Today</span>
+                  </div>
+                  <div className="space-y-2.5">
+                    {[
+                      { label: 'Inbound', icon: 'lucide:arrow-down-right', val: directionToday.in, color: 'bg-orange-500' },
+                      { label: 'Outbound', icon: 'lucide:arrow-up-right', val: directionToday.out, color: 'bg-blue-500' },
+                    ].map(d => (
+                      <div key={d.label}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] text-zinc-400 flex items-center gap-1.5">
+                            <iconify-icon icon={d.icon} width="12" className="text-zinc-500" /> {d.label}
+                          </span>
+                          <span className="text-[11px] font-mono text-zinc-300">{d.val}</span>
+                        </div>
+                        <div className="progress-track"><div className={`progress-fill ${d.color}`} style={{ width: `${Math.min((d.val / Math.max(directionToday.in, directionToday.out, 1)) * 100, 100)}%` }} /></div>
                       </div>
-                      <div className="progress-track"><div className={`progress-fill ${d.color}`} style={{ width: `${Math.min((d.val / (vehicles || 500)) * 300, 100)}%` }} /></div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Avg Wait Time */}
+            {/* Peak — last 24h (real) */}
             <div className="px-4 pb-4 anim d5">
               <div className="glass-card rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <iconify-icon icon="lucide:clock" width="14" className="text-zinc-500" />
-                  <span className="stat-label">Avg Wait Time</span>
+                  <iconify-icon icon="lucide:trending-up" width="14" className="text-zinc-500" />
+                  <span className="stat-label">Peak — last 24h</span>
                 </div>
                 <div className="flex items-baseline gap-2 mb-3">
-                  <span className="text-2xl font-semibold">{Math.round(waitTime)}</span>
-                  <span className="text-xs text-zinc-500">seconds</span>
+                  <span className="text-2xl font-semibold">{peaks ? peaks.count : '—'}</span>
+                  <span className="text-xs text-zinc-500">vehicles in one cycle</span>
                 </div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-zinc-500">N-S</span>
-                  <span className="text-[10px] font-mono text-zinc-300">{nsWait}s</span>
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span className="flex items-center gap-1.5">
+                    <iconify-icon icon="lucide:clock" width="12" className="text-zinc-600" />
+                    {peakTimeLabel}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <iconify-icon icon="lucide:video" width="12" className="text-zinc-600" />
+                    {peakCamLabel}
+                  </span>
                 </div>
-                <div className="progress-track mb-2"><div className="progress-fill bg-orange-500" style={{ width: `${(nsWait / 80) * 100}%` }} /></div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-zinc-500">E-W</span>
-                  <span className="text-[10px] font-mono text-zinc-300">{ewWait}s</span>
-                </div>
-                <div className="progress-track"><div className="progress-fill bg-blue-500" style={{ width: `${(ewWait / 80) * 100}%` }} /></div>
               </div>
             </div>
 
@@ -504,7 +470,7 @@ const AIChatPage = () => {
                 </div>
                 <div className="space-y-2">
                   {CAMERA_LOCATIONS.map((cam) => {
-                    const load = snapshots.find((s) => s.camera_id === cam.id) || {};
+                    const load = loads.find((s) => s.camera_id === cam.id) || {};
                     const level = load.load_level || 'low';
                     const color = getLoadColor(level);
                     const name = (cam.name || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -514,7 +480,7 @@ const AIChatPage = () => {
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
                           <span className="text-[11px] text-zinc-400">{name}</span>
                         </div>
-                        <span className="text-[10px] font-mono text-zinc-500">{load.vehicle_count ?? '—'}</span>
+                        <span className="text-[10px] font-mono text-zinc-500">{load.vehicle_count ?? '—'} · {Number(load.rolling_rate) || 0}/cyc</span>
                       </div>
                     );
                   })}
