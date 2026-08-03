@@ -95,6 +95,7 @@ const LiveMapPage = () => {
   const [duration, setDuration] = useState('30-60min');
   const [emergency, setEmergency] = useState(false);
   const [mapPickMode, setMapPickMode] = useState(false);
+  const [mapType, setMapType] = useState('roadmap');
 
   /* ── Load persisted user markers + reports (real data) ── */
   useEffect(() => {
@@ -238,7 +239,7 @@ const LiveMapPage = () => {
               <Map
                 defaultCenter={{ lat: MAP_CENTER[0], lng: MAP_CENTER[1] }}
                 defaultZoom={13}
-                mapTypeId="roadmap"
+                mapTypeId={mapType}
                 styles={DARK_MAP_STYLES}
                 disableDefaultUI
                 zoomControl
@@ -302,6 +303,25 @@ const LiveMapPage = () => {
                 )}
               </Map>
             </APIProvider>
+          )}
+
+          {/* Base map style toggle (Road / Satellite / Hybrid) */}
+          {GOOGLE_MAPS_API_KEY && (
+            <div className="absolute top-3 right-3 z-[500] glass-panel rounded-lg p-1 flex gap-1">
+              {[
+                { id: 'roadmap', label: 'Road' },
+                { id: 'satellite', label: 'Satellite' },
+                { id: 'hybrid', label: 'Hybrid' },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setMapType(t.id)}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${mapType === t.id ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           )}
 
           {/* Coordinates readout */}
