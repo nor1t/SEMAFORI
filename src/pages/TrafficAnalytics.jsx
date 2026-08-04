@@ -1,9 +1,12 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { useTheme } from '../context/ThemeContext';
+import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
+import { getLoadColor, getLoadLabel } from '../shared/trafficData';
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -14,462 +17,676 @@ import {
 import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
 
-// ── Camera metadata ───────────────────────────────────────────────────────
-// Hard-coded here so the frontend doesn't need to reach into the Python
-// config.  These are the same four cameras configured in
-// semafori-vision/cameras.py — keep them in sync.
+// ── Camera metadata — mirrors semafori-vision/cameras.py ──
 const CAMERAS = [
-  { id: 'c001', name: 'fushe-kosova', label: 'Fushë Kosova', lat: 42.643, lng: 21.089 },
-  { id: 'c002', name: 'aktash', label: 'Aktash', lat: 42.664, lng: 21.161 },
-  { id: 'c003', name: 'pejton', label: 'Pejton', lat: 42.665, lng: 21.166 },
-  { id: 'c004', name: 'bregu-i-diellit', label: 'Bregu i Diellit', lat: 42.652, lng: 21.150 },
+  { id: 'c001', name: 'fushe-kosova', label: 'Fushë Kosova' },
+  { id: 'c002', name: 'aktash', label: 'Aktash' },
+  { id: 'c003', name: 'pejton', label: 'Pejton' },
+  { id: 'c004', name: 'bregu-i-diellit', label: 'Bregu i Diellit' },
 ];
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-const LOAD_COLORS = {
-  low: '#10b981',       // emerald-500
-  medium: '#f59e0b',    // amber-500
-  high: '#f97316',      // orange-500
-  congested: '#ef4444', // red-500
+const CAM_COLORS = { c001: '#f97316', c002: '#60a5fa', c003: '#34d399', c004: '#e879f9' };
+const RANGES = [1, 3, 7, 14];
+const CYCLES_PER_DAY = 288; // 5-minute scheduler interval
+const TYPE_KEYS = ['car', 'truck', 'bus', 'motorcycle'];
+const TYPE_COLORS = { car: '#fb923c', truck: '#60a5fa', bus: '#34d399', motorcycle: '#e879f9', other: '#71717a' };
+
+const TOOLTIP_STYLE = {
+  background: '#18181b',
+  border: '1px solid #27272a',
+  borderRadius: 8,
+  fontSize: 12,
 };
 
-const LOAD_LABELS = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  congested: 'Congested',
-};
+/* ── Section wrapper (glass card with title) ── */
+function SectionCard({ icon, title, subtitle, children, className = '' }) {
+  return (
+    <div className={`glass-card rounded-xl p-5 ${className}`}>
+      <div className="flex items-center gap-2 mb-1">
+        <iconify-icon icon={icon} width="15" className="text-zinc-500" />
+        <span className="text-sm font-semibold tracking-tight">{title}</span>
+      </div>
+      {subtitle && <p className="text-[10px] text-zinc-600 mb-4">{subtitle}</p>}
+      {children}
+    </div>
+  );
+}
 
-// ── LiveCountWidget ────────────────────────────────────────────────────────
-function LiveCountWidget({ load }) {
-  const { theme } = useTheme();
-  const dark = theme === 'dark';
+/* ── Honest empty state ── */
+function EmptyState({ text = 'No data for this range' }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 text-center">
+      <iconify-icon icon="lucide:database-zap" width="20" className="text-zinc-700" />
+      <p className="mt-2 text-[11px] text-zinc-600">{text}</p>
+    </div>
+  );
+}
+
+/* ── Live camera card (from traffic_load) ── */
+function LiveCard({ load }) {
   const level = load?.load_level || 'low';
-  const color = LOAD_COLORS[level] || LOAD_COLORS.low;
-
+  const color = getLoadColor(level);
   return (
-    <div
-      className={`rounded-2xl border p-5 transition-colors ${
-        dark ? 'border-navy-600/30 bg-navy-800/40' : 'border-gray-200 bg-white'
-      }`}
-    >
-      {/* Header row */}
+    <div className="glass-card rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className={`font-serif text-lg font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>
-          {load?.camera_name
-            ? load.camera_name.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-            : '—'}
-        </h3>
-        <div
-          className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wider"
-          style={{ backgroundColor: color + '20', color }}
+        <span className="text-[11px] font-medium text-zinc-300 truncate">
+          {load?.camera_name ? load.camera_name.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '—'}
+        </span>
+        <span
+          className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+          style={{ backgroundColor: color + '1a', color }}
         >
-          <span
-            className="h-2 w-2 rounded-full"
-            style={{ backgroundColor: color }}
-          />
-          {LOAD_LABELS[level] || level}
-        </div>
-      </div>
-
-      {/* Count */}
-      <div className="flex items-baseline gap-1 mb-1">
-        <span className={`text-3xl font-bold tabular-nums ${dark ? 'text-white' : 'text-navy-900'}`}>
-          {load?.vehicle_count ?? '—'}
-        </span>
-        <span className={`text-sm ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
-          vehicles / cycle
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+          {getLoadLabel(level)}
         </span>
       </div>
-
-      {/* Rolling rate */}
-      <div className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
-        Rolling rate: <span className="font-medium tabular-nums">{load?.rolling_rate ?? '—'}</span> veh/cycle
-      </div>
-
-      {/* Timestamp */}
-      <div className={`mt-3 text-[11px] ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
-        {load?.timestamp
-          ? `Updated ${new Date(load.timestamp).toLocaleTimeString()}`
-          : 'No data yet'}
+      <div className="stat-value">{load?.vehicle_count ?? '—'}</div>
+      <div className="stat-label mt-1">vehicles · rate {load?.rolling_rate ?? '—'}/cycle</div>
+      <div className="mt-2 text-[9px] text-zinc-600 font-mono">
+        {load?.timestamp ? `updated ${new Date(load.timestamp).toLocaleTimeString('en-GB', { hour12: false })}` : 'no data yet'}
       </div>
     </div>
   );
 }
 
-// ── ChartSection ───────────────────────────────────────────────────────────
-function ChartSection({ cameraId }) {
-  const { theme } = useTheme();
-  const dark = theme === 'dark';
-  const [data, setData] = useState([]);
-  const [days, setDays] = useState(7);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  const fetchHistory = useCallback(async () => {
-    setLoading(true);
-    setError('');
-
-    const since = new Date();
-    since.setDate(since.getDate() - days);
-
-    try {
-      const result = await supabase
-        .from('traffic_counts')
-        .select('vehicle_count, timestamp')
-        .eq('camera_id', cameraId)
-        .gte('timestamp', since.toISOString())
-        .order('timestamp', { ascending: true })
-        .limit(500);
-
-      if (result.error) throw new Error(result.error.message);
-
-      const rows = (result.data || []).map((row) => ({
-        time: new Date(row.timestamp).toLocaleDateString('en-GB', {
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-        count: row.vehicle_count,
-        raw: new Date(row.timestamp),
-      }));
-
-      setData(rows);
-    } catch (err) {
-      console.error('Failed to fetch traffic history:', err);
-      setError(err.message || 'Could not load history.');
-    } finally {
-      setLoading(false);
-    }
-  }, [cameraId, days]);
-
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
-
-  const camera = CAMERAS.find((c) => c.id === cameraId);
-  const chartColor = dark ? '#93c5fd' : '#2563eb';
-
-  return (
-    <div
-      className={`rounded-2xl border p-6 ${
-        dark ? 'border-navy-600/30 bg-navy-800/40' : 'border-gray-200 bg-white'
-      }`}
-    >
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <h3 className={`font-serif text-xl font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>
-          Vehicle history — {camera?.label || cameraId}
-        </h3>
-
-        {/* Day selector */}
-        <div className="flex gap-2">
-          {[1, 3, 7, 14].map((d) => (
-            <button
-              key={d}
-              onClick={() => setDays(d)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                days === d
-                  ? 'bg-tblue-500 text-white'
-                  : dark
-                    ? 'bg-navy-700 text-gray-400 hover:text-gray-200'
-                    : 'bg-gray-100 text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {d === 1 ? '24h' : `${d}d`}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {error && (
-        <div
-          className={`mb-4 rounded-xl px-4 py-3 text-sm ${
-            dark ? 'bg-red-500/10 text-red-300' : 'bg-red-50 text-red-700'
-          }`}
-        >
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <div className="flex items-center gap-2">
-            <div className="h-3 w-3 animate-bounce rounded-full bg-tblue-500" />
-            <div className="h-3 w-3 animate-bounce rounded-full bg-tblue-500" style={{ animationDelay: '0.1s' }} />
-            <div className="h-3 w-3 animate-bounce rounded-full bg-tblue-500" style={{ animationDelay: '0.2s' }} />
-          </div>
-        </div>
-      ) : data.length === 0 ? (
-        <div className={`flex h-64 items-center justify-center text-sm ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
-          No data for this time window yet. The pipeline needs a few detection cycles before charts appear.
-        </div>
-      ) : (
-        <div className="h-64 sm:h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke={dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)'}
-              />
-              <XAxis
-                dataKey="time"
-                tick={{ fontSize: 10, fill: dark ? '#9ca3af' : '#6b7280' }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                tick={{ fontSize: 10, fill: dark ? '#9ca3af' : '#6b7280' }}
-                allowDecimals={false}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: dark ? '#111827' : '#fff',
-                  border: dark ? '1px solid #1f2937' : '1px solid #e5e7eb',
-                  borderRadius: '12px',
-                  fontSize: '13px',
-                  color: dark ? '#f3f4f6' : '#1f2937',
-                }}
-                labelFormatter={(label) => `Time: ${label}`}
-                formatter={(value) => [`${value} vehicles`, 'Count']}
-              />
-              <Legend
-                formatter={() => 'Vehicles'}
-                wrapperStyle={{ fontSize: '12px' }}
-              />
-              <Line
-                type="monotone"
-                dataKey="count"
-                name="Vehicles"
-                stroke={chartColor}
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 4, fill: chartColor }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      <div className={`mt-3 text-[11px] ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
-        {data.length} data points · from Supabase traffic_counts
-      </div>
-    </div>
-  );
-}
-
-// ── Main page ──────────────────────────────────────────────────────────────
 const TrafficAnalytics = () => {
-  const { theme } = useTheme();
-  const dark = theme === 'dark';
-
+  const [range, setRange] = useState(3);
+  const [counts, setCounts] = useState([]);
   const [loads, setLoads] = useState([]);
-  const [selectedCamera, setSelectedCamera] = useState(() => {
-    // Try to match the first camera from the URL hash or default to pejton
-    const hash = window.location.hash?.replace('#', '');
-    return CAMERAS.find((c) => c.name === hash)?.id || 'c003';
-  });
-  const [loadsLoading, setLoadsLoading] = useState(true);
-  const [loadsError, setLoadsError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [chartCamera, setChartCamera] = useState('all');
+  const [profileCamera, setProfileCamera] = useState('all');
 
-  // ── Fetch current load status for all cameras ──────────────────────
-  const fetchLoads = useCallback(async () => {
-    setLoadsLoading(true);
-    setLoadsError('');
-    try {
-      const result = await supabase
-        .from('traffic_load')
-        .select('*')
-        .order('camera_id', { ascending: true });
+  /* ── Fetch history once per range change ── */
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const since = new Date(Date.now() - range * 86400000).toISOString();
+        const result = await supabase
+          .from('traffic_counts')
+          .select('*')
+          .gte('timestamp', since)
+          .order('timestamp', { ascending: true })
+          .limit(10000);
+        if (cancelled) return;
+        if (!result.error) setCounts(result.data || []);
+      } catch { /* keep previous data */ }
+      if (!cancelled) setLoading(false);
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [range]);
 
-      if (result.error) throw new Error(result.error.message);
-      setLoads(result.data || []);
-    } catch (err) {
-      console.error('Failed to fetch traffic_load:', err);
-      setLoadsError(err.message || 'Could not load camera status.');
-    } finally {
-      setLoadsLoading(false);
-    }
+  /* ── Live load rows (for cards + percentile thresholds) ── */
+  useEffect(() => {
+    let cancelled = false;
+    const fetchLoads = async () => {
+      try {
+        const result = await supabase.from('traffic_load').select('*').order('camera_id', { ascending: true });
+        if (!cancelled && !result.error) setLoads(result.data || []);
+      } catch { /* ignore */ }
+    };
+    fetchLoads();
+    const id = setInterval(fetchLoads, 60000);
+    return () => { cancelled = true; clearInterval(id); };
   }, []);
 
-  useEffect(() => {
-    fetchLoads();
-  }, [fetchLoads]);
+  /* ── Data engine: everything derives from `counts` + `loads` ── */
+  const perCam = useMemo(() => {
+    const map = {};
+    for (const cam of CAMERAS) map[cam.id] = [];
+    for (const row of counts) {
+      if (map[row.camera_id]) map[row.camera_id].push(row);
+    }
+    return map;
+  }, [counts]);
 
-  // Refresh every 60 seconds
-  useEffect(() => {
-    const interval = setInterval(fetchLoads, 60000);
-    return () => clearInterval(interval);
-  }, [fetchLoads]);
+  /* Hourly time series for the line chart (avg vehicles per hour bucket) */
+  const hourlySeries = useMemo(() => {
+    const series = [];
+    const index = new Map();
+    for (const row of counts) {
+      const d = new Date(row.timestamp);
+      if (Number.isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`;
+      let idx = index.get(key);
+      if (idx === undefined) {
+        idx = series.length;
+        index.set(key, idx);
+        series.push({
+          label: `${d.getDate()}/${d.getMonth() + 1} ${String(d.getHours()).padStart(2, '0')}h`,
+        });
+      }
+      const bucket = series[idx];
+      const cid = row.camera_id;
+      bucket[`${cid}_sum`] = (bucket[`${cid}_sum`] || 0) + (Number(row.vehicle_count) || 0);
+      bucket[`${cid}_n`] = (bucket[`${cid}_n`] || 0) + 1;
+    }
+    for (const bucket of series) {
+      for (const cam of CAMERAS) {
+        const n = bucket[`${cam.id}_n`] || 0;
+        bucket[cam.id] = n > 0 ? +(bucket[`${cam.id}_sum`] / n).toFixed(1) : null;
+      }
+    }
+    return series;
+  }, [counts]);
 
-  const handleCameraSelect = (cameraId) => {
-    setSelectedCamera(cameraId);
-    const cam = CAMERAS.find((c) => c.id === cameraId);
-    if (cam) window.location.hash = cam.name;
+  /* Hour-of-day profile (avg per cycle for each hour) */
+  const profileData = useMemo(() => {
+    const sums = new Array(24).fill(0);
+    const ns = new Array(24).fill(0);
+    for (const row of counts) {
+      if (profileCamera !== 'all' && row.camera_id !== profileCamera) continue;
+      const d = new Date(row.timestamp);
+      if (Number.isNaN(d.getTime())) continue;
+      const h = d.getHours();
+      sums[h] += Number(row.vehicle_count) || 0;
+      ns[h] += 1;
+    }
+    return sums.map((s, h) => ({
+      hour: `${String(h).padStart(2, '0')}h`,
+      avg: ns[h] ? +(s / ns[h]).toFixed(1) : 0,
+    }));
+  }, [counts, profileCamera]);
+
+  const peakProfileHour = useMemo(
+    () => profileData.reduce((best, cur) => (cur.avg > (best?.avg ?? -1) ? cur : best), null),
+    [profileData],
+  );
+
+  /* Camera comparison ranking */
+  const comparison = useMemo(() => {
+    return CAMERAS.map((cam) => {
+      const rows = perCam[cam.id] || [];
+      const load = loads.find((l) => l.camera_id === cam.id) || {};
+      const total = rows.reduce((s, r) => s + (Number(r.vehicle_count) || 0), 0);
+      const avg = rows.length ? +(total / rows.length).toFixed(1) : 0;
+      const peakRow = rows.reduce(
+        (best, r) => ((Number(r.vehicle_count) || 0) > (Number(best?.vehicle_count) || -1) ? r : best),
+        null,
+      );
+      const p90 = Number(load.percentile_90) || 0;
+      const congestedPct = p90 > 0 && rows.length
+        ? +((rows.filter((r) => (Number(r.vehicle_count) || 0) > p90).length / rows.length) * 100).toFixed(1)
+        : null;
+      return { cam, rows: rows.length, total, avg, peakRow, congestedPct };
+    }).sort((a, b) => b.total - a.total);
+  }, [perCam, loads]);
+
+  /* Vehicle type mix per camera (summed JSONB breakdown) */
+  const typeMix = useMemo(() => {
+    return CAMERAS.map((cam) => {
+      const sums = { car: 0, truck: 0, bus: 0, motorcycle: 0, other: 0 };
+      for (const row of perCam[cam.id] || []) {
+        const bd = row.vehicle_type_breakdown || {};
+        for (const [key, value] of Object.entries(bd)) {
+          const v = Number(value) || 0;
+          if (TYPE_KEYS.includes(key)) sums[key] += v;
+          else sums.other += v;
+        }
+      }
+      return { camera: cam.label, ...sums };
+    });
+  }, [perCam]);
+
+  /* Load distribution: classify each cycle against the camera's percentiles */
+  const loadDist = useMemo(() => {
+    return CAMERAS.map((cam) => {
+      const rows = perCam[cam.id] || [];
+      const load = loads.find((l) => l.camera_id === cam.id) || {};
+      const p40 = Number(load.percentile_40) || 0;
+      const p70 = Number(load.percentile_70) || 0;
+      const p90 = Number(load.percentile_90) || 0;
+      if (!rows.length || !(p90 > 0)) return { cam, ready: false };
+      const buckets = { low: 0, medium: 0, high: 0, congested: 0 };
+      for (const r of rows) {
+        const n = Number(r.vehicle_count) || 0;
+        if (n > p90) buckets.congested += 1;
+        else if (n > p70) buckets.high += 1;
+        else if (n > p40) buckets.medium += 1;
+        else buckets.low += 1;
+      }
+      return { cam, ready: true, buckets, total: rows.length };
+    });
+  }, [perCam, loads]);
+
+  /* Top 5 peak cycles */
+  const topPeaks = useMemo(
+    () => [...counts]
+      .sort((a, b) => (Number(b.vehicle_count) || 0) - (Number(a.vehicle_count) || 0))
+      .slice(0, 5),
+    [counts],
+  );
+
+  /* Anomalies: |count − same-hour same-camera mean| > 2σ (and ≥3 vehicles) */
+  const anomalies = useMemo(() => {
+    const groups = new Map();
+    for (const row of counts) {
+      const d = new Date(row.timestamp);
+      if (Number.isNaN(d.getTime())) continue;
+      const key = `${row.camera_id}:${d.getHours()}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(Number(row.vehicle_count) || 0);
+    }
+    const stats = new Map();
+    for (const [key, arr] of groups) {
+      const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+      const variance = arr.reduce((s, x) => s + (x - mean) ** 2, 0) / arr.length;
+      stats.set(key, { mean, sd: Math.sqrt(variance) });
+    }
+    const out = [];
+    for (const row of counts) {
+      const d = new Date(row.timestamp);
+      if (Number.isNaN(d.getTime())) continue;
+      const st = stats.get(`${row.camera_id}:${d.getHours()}`);
+      if (!st || st.sd === 0) continue;
+      const n = Number(row.vehicle_count) || 0;
+      const z = (n - st.mean) / st.sd;
+      if (Math.abs(z) > 2 && Math.abs(n - st.mean) >= 3) {
+        out.push({ row, z, n, mean: st.mean });
+      }
+    }
+    return out.sort((a, b) => Math.abs(b.z) - Math.abs(a.z)).slice(0, 8);
+  }, [counts]);
+
+  /* Data coverage (actual vs expected cycles) */
+  const coverage = useMemo(() => {
+    const expected = range * CYCLES_PER_DAY;
+    return CAMERAS.map((cam) => {
+      const actual = (perCam[cam.id] || []).length;
+      return { cam, actual, pct: Math.min(100, Math.round((actual / expected) * 100)) };
+    });
+  }, [perCam, range]);
+
+  /* ── CSV export ── */
+  const exportCsv = () => {
+    const header = 'timestamp,camera_id,camera_name,vehicle_count,in_count,out_count,vehicle_type_breakdown,avg_confidence';
+    const lines = counts.map((r) => [
+      r.timestamp,
+      r.camera_id,
+      r.camera_name,
+      Number(r.vehicle_count) || 0,
+      Number(r.in_count) || 0,
+      Number(r.out_count) || 0,
+      JSON.stringify(JSON.stringify(r.vehicle_type_breakdown || {})),
+      Number(r.avg_confidence) || 0,
+    ].join(','));
+    const csv = [header, ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `semafori_counts_${range}d.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
+  const fmtTs = (ts) => new Date(ts).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+
   return (
-    <div
-      className={`min-h-screen transition-colors duration-500 grain ${
-        dark ? 'bg-navy-950 text-gray-200' : 'bg-paper-50 text-gray-800'
-      }`}
-    >
+    <div style={{ background: '#09090b', minHeight: '100vh', color: '#fff' }}>
+      <style>{`
+        .glass-card { background: rgba(255,255,255,0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
+        .glass-card:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
+        .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: #71717a; }
+        .stat-value { font-size: 22px; font-weight: 600; color: #fff; line-height: 1.2; }
+        .progress-track { background: rgba(255,255,255,0.06); border-radius: 9999px; overflow: hidden; height: 4px; }
+        .progress-fill { height: 100%; border-radius: 9999px; transition: width 1s cubic-bezier(0.16,1,0.3,1); }
+        .range-pill { padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 600; color: #71717a; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); cursor: pointer; transition: all 0.2s ease; }
+        .range-pill:hover { color: #a1a1aa; background: rgba(255,255,255,0.05); }
+        .range-pill.active { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.35); color: #fb923c; }
+        .cam-pill { padding: 4px 10px; border-radius: 9999px; font-size: 10px; font-weight: 600; color: #71717a; border: 1px solid rgba(255,255,255,0.08); background: transparent; cursor: pointer; transition: all 0.2s ease; }
+        .cam-pill:hover { color: #d4d4d8; }
+        .cam-pill.active { background: rgba(255,255,255,0.08); color: #fff; border-color: rgba(255,255,255,0.2); }
+        .bg-glow { position: fixed; border-radius: 9999px; filter: blur(120px); opacity: 0.05; pointer-events: none; z-index: -10; }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .anim { animation: fadeInUp 0.7s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .d1{animation-delay:0.05s;opacity:0}.d2{animation-delay:0.1s;opacity:0}.d3{animation-delay:0.15s;opacity:0}.d4{animation-delay:0.2s;opacity:0}
+        ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 9999px; }
+      `}</style>
+
+      <div className="bg-glow" style={{ top: '-100px', left: '150px', width: '500px', height: '400px', background: '#f97316' }} />
+      <div className="bg-glow" style={{ bottom: '-120px', right: '-80px', width: '400px', height: '400px', background: '#3b82f6' }} />
+
       <SiteHeader />
 
-      <section className="py-16 lg:py-20">
-        <div className="mx-auto max-w-7xl px-6">
-          {/* ── Page header ──────────────────────────────────────── */}
-          <div className="mb-10">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="eastern-line w-8" />
-              <span
-                className={`text-[11px] font-medium uppercase tracking-[0.28em] ${
-                  dark ? 'text-tblue-300/70' : 'text-tblue-600/70'
-                }`}
-              >
-                Traffic Analytics
-              </span>
-            </div>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <main className="pt-20 pb-16 px-4 md:px-6">
+        <div className="max-w-7xl mx-auto">
+
+          {/* Header: title + range selector + export */}
+          <div className="mb-6 anim d1">
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
               <div>
-                <h1
-                  className={`font-serif text-3xl font-bold sm:text-4xl ${
-                    dark ? 'text-white' : 'text-navy-900'
-                  }`}
-                >
-                  Live road-load{' '}
-                  <span className={dark ? 'text-tblue-300' : 'text-tblue-600'}>
-                    classification
-                  </span>
-                </h1>
-                <p
-                  className={`mt-3 max-w-2xl text-sm leading-7 ${
-                    dark ? 'text-gray-400' : 'text-gray-500'
-                  }`}
-                >
-                  Each camera is classified every cycle using percentile-based
-                  thresholds computed from its own recent history. The coloured
-                  markers on the map update in real time.
-                </p>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-orange-400 mb-1.5">Prishtinë — Traffic Intelligence</p>
+                <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-white">Traffic Analytics</h1>
+                <p className="text-[11px] text-zinc-500 mt-1">Real counts from the YOLO + ByteTrack pipeline · {counts.length.toLocaleString()} cycles in range</p>
               </div>
-
-              {/* Refresh button */}
-              <button
-                onClick={fetchLoads}
-                disabled={loadsLoading}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition ${
-                  dark
-                    ? 'bg-navy-800 text-gray-300 hover:bg-navy-700'
-                    : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-                }`}
-              >
-                <iconify-icon
-                  icon="lucide:refresh-cw"
-                  width="14"
-                  class={loadsLoading ? 'animate-spin' : ''}
-                />
-                Refresh
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                {RANGES.map((d) => (
+                  <button key={d} onClick={() => setRange(d)} className={`range-pill ${range === d ? 'active' : ''}`}>
+                    {d}d
+                  </button>
+                ))}
+                <button
+                  onClick={exportCsv}
+                  disabled={counts.length === 0}
+                  className="range-pill flex items-center gap-1.5 disabled:opacity-40"
+                  title="Download the fetched rows as CSV"
+                >
+                  <iconify-icon icon="lucide:download" width="12" />
+                  Export CSV
+                </button>
+              </div>
             </div>
-
-            {loadsError && (
-              <div
-                className={`mt-4 rounded-xl px-4 py-3 text-sm ${
-                  dark ? 'bg-red-500/10 text-red-300' : 'bg-red-50 text-red-700'
-                }`}
-              >
-                {loadsError}
-              </div>
-            )}
           </div>
 
-          {/* ── Live count widgets (4 cards) ──────────────────────── */}
-          {loadsLoading && loads.length === 0 ? (
-            <div className="flex h-32 items-center justify-center">
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 animate-bounce rounded-full bg-tblue-500" />
-                <div className="h-3 w-3 animate-bounce rounded-full bg-tblue-500" style={{ animationDelay: '0.1s' }} />
-                <div className="h-3 w-3 animate-bounce rounded-full bg-tblue-500" style={{ animationDelay: '0.2s' }} />
-              </div>
-            </div>
-          ) : (
-            <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {CAMERAS.map((cam) => {
-                const load = loads.find((l) => l.camera_id === cam.id) || null;
-                return <LiveCountWidget key={cam.id} load={load} />;
-              })}
-            </div>
-          )}
-
-          {/* ── Historical chart ──────────────────────────────────── */}
-          <div className="mb-10 flex flex-wrap items-center gap-3">
-            <span
-              className={`text-xs font-semibold uppercase tracking-wide ${
-                dark ? 'text-gray-400' : 'text-gray-600'
-              }`}
-            >
-              Camera:
-            </span>
+          {/* 4 live cards */}
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5 anim d2">
             {CAMERAS.map((cam) => (
-              <button
-                key={cam.id}
-                onClick={() => handleCameraSelect(cam.id)}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                  selectedCamera === cam.id
-                    ? 'bg-tblue-500 text-white'
-                    : dark
-                      ? 'bg-navy-800 text-gray-400 hover:text-gray-200'
-                      : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                {cam.label}
-              </button>
+              <LiveCard key={cam.id} load={loads.find((l) => l.camera_id === cam.id)} />
             ))}
           </div>
 
-          <ChartSection key={selectedCamera} cameraId={selectedCamera} />
-
-          {/* ── How it works ──────────────────────────────────────── */}
-          <div className="mt-12 grid gap-6 sm:grid-cols-3">
-            {[
-              {
-                icon: 'lucide:bar-chart-3',
-                title: 'Percentile-based',
-                desc: 'Thresholds come from each camera\'s own 40th/70th/90th percentile of recent vehicle counts, so "high" means high *for that road*.',
-              },
-              {
-                icon: 'lucide:database',
-                title: 'Stored in Supabase',
-                desc: 'traffic_load.py updates the traffic_load table after every scheduler cycle. The dashboard reads it directly — no server-side aggregation needed.',
-              },
-              {
-                icon: 'lucide:map-pin',
-                title: 'Map colour sync',
-                desc: 'Camera markers on the Leaflet map change colour automatically when the load level changes. No manual refresh required.',
-              },
-            ].map((item) => (
-              <div
-                key={item.title}
-                className={`rounded-2xl border p-5 ${
-                  dark ? 'border-navy-600/30 bg-navy-800/40' : 'border-gray-200 bg-white'
-                }`}
-              >
-                <div
-                  className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${
-                    dark ? 'bg-tblue-500/10' : 'bg-tblue-50'
-                  }`}
-                >
-                  <iconify-icon icon={item.icon} width="18" class="text-tblue-500" />
-                </div>
-                <h3 className={`font-serif text-base font-semibold ${dark ? 'text-white' : 'text-navy-900'}`}>
-                  {item.title}
-                </h3>
-                <p className={`mt-2 text-sm leading-6 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {item.desc}
-                </p>
+          {/* History line chart */}
+          <div className="anim d3">
+            <SectionCard
+              icon="lucide:chart-line"
+              title="Vehicle counts over time"
+              subtitle={`Hourly averages per camera · last ${range} day${range > 1 ? 's' : ''}${loading ? ' · loading…' : ''}`}
+              className="mb-5"
+            >
+              <div className="flex items-center gap-2 flex-wrap mb-4">
+                <button onClick={() => setChartCamera('all')} className={`cam-pill ${chartCamera === 'all' ? 'active' : ''}`}>All cameras</button>
+                {CAMERAS.map((cam) => (
+                  <button key={cam.id} onClick={() => setChartCamera(cam.id)} className={`cam-pill ${chartCamera === cam.id ? 'active' : ''}`}>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: CAM_COLORS[cam.id] }} />
+                    {cam.label}
+                  </button>
+                ))}
               </div>
-            ))}
+              {hourlySeries.length === 0 ? (
+                <EmptyState />
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={hourlySeries} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                    <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: '#71717a', fontSize: 10 }} minTickGap={40} tickLine={false} axisLine={{ stroke: '#27272a' }} />
+                    <YAxis tick={{ fill: '#71717a', fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: '#a1a1aa' }} />
+                    {(chartCamera === 'all' ? CAMERAS : CAMERAS.filter((c) => c.id === chartCamera)).map((cam) => (
+                      <Line
+                        key={cam.id}
+                        type="monotone"
+                        dataKey={cam.id}
+                        name={cam.label}
+                        stroke={CAM_COLORS[cam.id]}
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </SectionCard>
           </div>
+
+          {/* Hour-of-day profile + Camera comparison */}
+          <div className="grid xl:grid-cols-2 gap-5 mb-5">
+            <SectionCard
+              icon="lucide:clock"
+              title="Hour-of-day profile"
+              subtitle={`Average vehicles per cycle by hour · when rush hour actually happens${peakProfileHour && peakProfileHour.avg > 0 ? ` · peak: ${peakProfileHour.hour}` : ''}`}
+            >
+              <div className="flex items-center gap-2 flex-wrap mb-4">
+                <button onClick={() => setProfileCamera('all')} className={`cam-pill ${profileCamera === 'all' ? 'active' : ''}`}>All</button>
+                {CAMERAS.map((cam) => (
+                  <button key={cam.id} onClick={() => setProfileCamera(cam.id)} className={`cam-pill ${profileCamera === cam.id ? 'active' : ''}`}>
+                    {cam.label}
+                  </button>
+                ))}
+              </div>
+              {counts.length === 0 ? (
+                <EmptyState />
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={profileData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                    <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="hour" tick={{ fill: '#71717a', fontSize: 9 }} interval={2} tickLine={false} axisLine={{ stroke: '#27272a' }} />
+                    <YAxis tick={{ fill: '#71717a', fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: '#a1a1aa' }} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                    <Bar dataKey="avg" name="Avg vehicles" radius={[3, 3, 0, 0]}>
+                      {profileData.map((entry) => (
+                        <Cell
+                          key={entry.hour}
+                          fill={peakProfileHour && entry.hour === peakProfileHour.hour && entry.avg > 0 ? '#f97316' : 'rgba(249,115,22,0.35)'}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              icon="lucide:trophy"
+              title="Camera comparison"
+              subtitle="Ranked by total vehicles counted in range"
+            >
+              {comparison.every((c) => c.rows === 0) ? (
+                <EmptyState />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="text-zinc-600 text-left">
+                        <th className="pb-2 font-medium">#</th>
+                        <th className="pb-2 font-medium">Camera</th>
+                        <th className="pb-2 font-medium text-right">Total</th>
+                        <th className="pb-2 font-medium text-right">Avg/cycle</th>
+                        <th className="pb-2 font-medium text-right">Peak</th>
+                        <th className="pb-2 font-medium text-right">% congested</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {comparison.map((row, i) => (
+                        <tr key={row.cam.id} className="border-t border-zinc-800/50">
+                          <td className="py-2 text-zinc-500 font-mono">{i + 1}</td>
+                          <td className="py-2">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: CAM_COLORS[row.cam.id] }} />
+                            <span className="text-zinc-200">{row.cam.label}</span>
+                          </td>
+                          <td className="py-2 text-right font-mono text-zinc-300">{row.total.toLocaleString()}</td>
+                          <td className="py-2 text-right font-mono text-zinc-400">{row.avg}</td>
+                          <td className="py-2 text-right font-mono text-zinc-400">
+                            {row.peakRow ? `${row.peakRow.vehicle_count} · ${fmtTs(row.peakRow.timestamp)}` : '—'}
+                          </td>
+                          <td className="py-2 text-right font-mono">
+                            {row.congestedPct == null ? (
+                              <span className="text-zinc-600">—</span>
+                            ) : (
+                              <span style={{ color: row.congestedPct > 15 ? '#ef4444' : row.congestedPct > 5 ? '#f97316' : '#34d399' }}>
+                                {row.congestedPct}%
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </SectionCard>
+          </div>
+
+          {/* Vehicle type mix + Load distribution */}
+          <div className="grid xl:grid-cols-2 gap-5 mb-5">
+            <SectionCard
+              icon="lucide:layers"
+              title="Vehicle type mix"
+              subtitle="Summed detections per camera across the range"
+            >
+              {typeMix.every((t) => t.car + t.truck + t.bus + t.motorcycle + t.other === 0) ? (
+                <EmptyState />
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={typeMix} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                    <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="camera" tick={{ fill: '#71717a', fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#27272a' }} />
+                    <YAxis tick={{ fill: '#71717a', fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: '#a1a1aa' }} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                    <Legend wrapperStyle={{ fontSize: 10, color: '#a1a1aa' }} />
+                    {[...TYPE_KEYS, 'other'].map((key) => (
+                      <Bar key={key} dataKey={key} name={key.charAt(0).toUpperCase() + key.slice(1)} stackId="mix" fill={TYPE_COLORS[key]} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              icon="lucide:gauge"
+              title="Load distribution"
+              subtitle="Share of cycles in each load class (vs each camera's live percentiles)"
+            >
+              {loadDist.every((d) => !d.ready) ? (
+                <EmptyState text="Not enough history for percentile classes yet" />
+              ) : (
+                <div className="space-y-4 pt-1">
+                  {loadDist.map((d) => (
+                    <div key={d.cam.id}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[11px] text-zinc-300">{d.cam.label}</span>
+                        {!d.ready && <span className="text-[9px] text-zinc-600">no thresholds yet</span>}
+                      </div>
+                      {d.ready && (
+                        <>
+                          <div className="flex rounded-md overflow-hidden h-3">
+                            {['low', 'medium', 'high', 'congested'].map((lvl) => (
+                              <div
+                                key={lvl}
+                                style={{
+                                  width: `${(d.buckets[lvl] / d.total) * 100}%`,
+                                  background: getLoadColor(lvl),
+                                }}
+                                title={`${getLoadLabel(lvl)}: ${Math.round((d.buckets[lvl] / d.total) * 100)}%`}
+                              />
+                            ))}
+                          </div>
+                          <div className="flex justify-between mt-1 text-[9px] font-mono text-zinc-600">
+                            {['low', 'medium', 'high', 'congested'].map((lvl) => (
+                              <span key={lvl} style={{ color: getLoadColor(lvl) }}>
+                                {Math.round((d.buckets[lvl] / d.total) * 100)}%
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex gap-3 pt-1 text-[9px] text-zinc-600">
+                    {['low', 'medium', 'high', 'congested'].map((lvl) => (
+                      <span key={lvl} className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-sm" style={{ background: getLoadColor(lvl) }} />
+                        {getLoadLabel(lvl)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+          </div>
+
+          {/* Peak cycles + Anomalies + Data coverage */}
+          <div className="grid xl:grid-cols-3 gap-5 anim d4">
+            <SectionCard
+              icon="lucide:zap"
+              title="Peak cycles"
+              subtitle="Top 5 busiest single cycles in range"
+            >
+              {topPeaks.length === 0 ? (
+                <EmptyState />
+              ) : (
+                <div className="space-y-2">
+                  {topPeaks.map((row, i) => (
+                    <div key={`${row.id ?? i}`} className="flex items-center gap-3 p-2 rounded-lg bg-white/[0.02]">
+                      <span className={`text-[11px] font-mono w-5 text-center ${i === 0 ? 'text-orange-400' : 'text-zinc-600'}`}>{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] text-zinc-200 truncate">
+                          {(row.camera_name || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                        </p>
+                        <p className="text-[9px] text-zinc-600 font-mono">{fmtTs(row.timestamp)}</p>
+                      </div>
+                      <span className="text-sm font-semibold text-zinc-100 font-mono">{row.vehicle_count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              icon="lucide:siren"
+              title="Anomalies"
+              subtitle="|count − hourly mean| > 2σ (min 3 vehicles) · possible incidents or camera faults"
+            >
+              {anomalies.length === 0 ? (
+                <EmptyState text="No anomalies detected in this range." />
+              ) : (
+                <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                  {anomalies.map((a, i) => (
+                    <div key={i} className="flex items-start gap-2.5 p-2 rounded-lg bg-white/[0.02]">
+                      <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${a.z > 0 ? 'bg-red-500' : 'bg-blue-400'}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] text-zinc-200 truncate">
+                          {(a.row.camera_name || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                        </p>
+                        <p className="text-[9px] text-zinc-600 font-mono">{fmtTs(a.row.timestamp)}</p>
+                      </div>
+                      <span className={`text-[10px] font-mono whitespace-nowrap ${a.z > 0 ? 'text-red-400' : 'text-blue-400'}`}>
+                        {a.n} veh · {Math.abs(a.z).toFixed(1)}σ {a.z > 0 ? 'above' : 'below'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              icon="lucide:heart-pulse"
+              title="Data coverage"
+              subtitle={`Actual vs expected cycles (${CYCLES_PER_DAY}/day per camera)`}
+            >
+              <div className="space-y-3.5 pt-1">
+                {coverage.map((c) => (
+                  <div key={c.cam.id}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] text-zinc-300 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: CAM_COLORS[c.cam.id] }} />
+                        {c.cam.label}
+                      </span>
+                      <span className="text-[10px] font-mono text-zinc-500">{c.actual} rows · {c.pct}%</span>
+                    </div>
+                    <div className="progress-track">
+                      <div
+                        className="progress-fill"
+                        style={{
+                          width: `${c.pct}%`,
+                          background: c.pct >= 90 ? '#34d399' : c.pct >= 60 ? '#facc15' : '#ef4444',
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
+
         </div>
-      </section>
+      </main>
 
       <SiteFooter />
     </div>

@@ -10,6 +10,7 @@ import Profile from './pages/Profile';
 import CamerasPage from './pages/CamerasPage';
 import AIChatPage from './pages/AIChatPage';
 import LiveMapPage from './pages/LiveMapPage';
+import TrafficAnalytics from './pages/TrafficAnalytics';
 
 function App() {
   return (
@@ -35,6 +36,11 @@ function App() {
               <Route path="/live-map" element={
                 <ProtectedRoute>
                   <LiveMapPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/analytics" element={
+                <ProtectedRoute>
+                  <TrafficAnalytics />
                 </ProtectedRoute>
               } />
             </Routes>

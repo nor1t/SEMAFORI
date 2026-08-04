@@ -9,6 +9,7 @@ const footerColumns = [
       { label: 'Live Cameras', to: '/cameras' },
       { label: 'AI Chat', to: '/ai-chat' },
       { label: 'Live Map', to: '/live-map' },
+      { label: 'Analytics', to: '/analytics' },
       { label: 'Profile', to: '/profile' },
     ],
   },
