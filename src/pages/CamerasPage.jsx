@@ -8,18 +8,14 @@ import { fetchIncidentReports } from '../services/reportService';
 import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
 
-/* ── Camera stream status: ONLINE (recent success) / OFFLINE (stream down) ── */
-function camStatus(camId, health, healthOnline, nowMs) {
-  if (!healthOnline) return { label: 'OFFLINE', cls: 'text-red-400', online: false };
+/* ── Pipeline status badge: LIVE / STALE Xm / OFFLINE ── */
+function pipelineBadge(camId, health, online, nowMs) {
+  if (!online) return { label: 'OFFLINE', cls: 'text-zinc-500' };
   const cam = health?.cameras?.[camId];
-  const successMs = cam?.last_success_utc ? new Date(cam.last_success_utc).getTime() : null;
-  const errorMs = cam?.last_error_utc ? new Date(cam.last_error_utc).getTime() : null;
-  const fresh = successMs != null && nowMs > 0 && nowMs - successMs < 600000;
-  const notErroring = errorMs == null || (successMs != null && successMs >= errorMs);
-  const online = fresh && notErroring;
-  return online
-    ? { label: 'ONLINE', cls: 'text-emerald-400', online: true }
-    : { label: 'OFFLINE', cls: 'text-red-400', online: false };
+  if (!cam?.last_success_utc) return { label: 'NO DATA', cls: 'text-zinc-500' };
+  const ageMin = Math.floor((nowMs - new Date(cam.last_success_utc).getTime()) / 60000);
+  if (ageMin < 10) return { label: 'LIVE', cls: 'text-emerald-400' };
+  return { label: `STALE ${ageMin}m`, cls: 'text-amber-400' };
 }
 
 /* ── Sparkline: the last N real values, no simulation ── */
@@ -135,12 +131,7 @@ const CamerasPage = () => {
   }, [user?.id]);
 
   /* ── Derived values (all computed from Supabase rows) ── */
-  // Only cameras with a working stream count toward the network total —
-  // a dead camera's last-known count is stale and must not be counted.
-  const networkVehicles = loads.reduce((s, l) => {
-    const st = camStatus(l.camera_id, pipelineHealth, pipelineOnline, nowMs);
-    return st.online ? s + (Number(l.vehicle_count) || 0) : s;
-  }, 0);
+  const networkVehicles = loads.reduce((s, l) => s + (Number(l.vehicle_count) || 0), 0);
   const ci = networkCongestion;
   const congestionClass =
     ci < 40 ? 'congestion-low' : ci < 65 ? 'congestion-mid' : ci < 80 ? 'congestion-high' : 'congestion-severe';
@@ -305,7 +296,7 @@ const CamerasPage = () => {
                   const level = load.load_level || 'low';
                   const color = getLoadColor(level);
                   const name = prettyCamName(cam.name);
-                  const status = camStatus(cam.id, pipelineHealth, pipelineOnline, nowMs);
+                  const badge = pipelineBadge(cam.id, pipelineHealth, pipelineOnline, nowMs);
                   return (
                     <div key={cam.id} className="relative group cursor-pointer"
                       style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', background: '#000', aspectRatio: '16 / 10' }}
@@ -314,9 +305,6 @@ const CamerasPage = () => {
                         if (feed) { setCameraStatus('loading'); setSelectedCamera(feed); }
                       }}
                     >
-                      {/* Snapshot always attempts to load — it is itself the
-                          ground truth.  The OFFLINE overlay only covers it
-                          when the pipeline health says the camera is down. */}
                       <img
                         src={snapshotUrl(cam.name, snapTick)}
                         alt={name}
@@ -331,15 +319,12 @@ const CamerasPage = () => {
                           if (sib) sib.style.display = 'flex';
                         }}
                       />
-                      <div className="absolute inset-0 items-center justify-center text-[10px] uppercase tracking-[0.2em] text-gray-500 hidden">no signal</div>
-                      {!status.online && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black text-[10px] uppercase tracking-[0.2em] text-gray-500 z-10">no signal</div>
-                      )}
+                      <div className="absolute inset-0 items-center justify-center text-[10px] uppercase tracking-[0.2em] text-gray-500 hidden">no snapshot</div>
                       <div className="absolute inset-0 bg-black/15 group-hover:bg-black/5 transition-colors pointer-events-none" />
-                      <div className={`absolute top-1.5 left-1.5 text-[8px] font-mono bg-black/50 px-1 py-0.5 rounded ${status.cls}`}>{status.label}</div>
+                      <div className={`absolute top-1.5 left-1.5 text-[8px] font-mono bg-black/50 px-1 py-0.5 rounded ${badge.cls}`}>{badge.label}</div>
                       <div className="absolute bottom-1.5 left-1.5 text-[8px] font-mono text-white/50 bg-black/50 px-1 py-0.5 rounded">{name}</div>
-                      <div className="absolute bottom-1.5 right-1.5 text-[8px] font-mono text-white/70 bg-black/50 px-1 py-0.5 rounded">{status.online ? `${load.vehicle_count ?? '—'} veh` : 'na'}</div>
-                      <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: status.online ? color : '#52525b' }} />
+                      <div className="absolute bottom-1.5 right-1.5 text-[8px] font-mono text-white/70 bg-black/50 px-1 py-0.5 rounded">{load.vehicle_count ?? '—'} veh</div>
+                      <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
                     </div>
                   );
                 })}
@@ -452,7 +437,7 @@ const CamerasPage = () => {
                   </div>
                   <ThroughputChart today={hourlyToday} yesterday={hourlyYesterday} />
                   <div className="flex justify-between mt-2 text-[9px] text-zinc-600 font-mono">
-                    <span>12AM</span><span>6AM</span><span>12PM</span><span>6PM</span><span>11PM</span>
+                    <span>12AM</span><span>4AM</span><span>8AM</span><span>12PM</span><span>4PM</span><span>8PM</span>
                   </div>
                 </div>
 
