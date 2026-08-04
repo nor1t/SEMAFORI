@@ -8,14 +8,18 @@ import { fetchIncidentReports } from '../services/reportService';
 import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
 
-/* ── Pipeline status badge: LIVE / STALE Xm / OFFLINE ── */
-function pipelineBadge(camId, health, online, nowMs) {
-  if (!online) return { label: 'OFFLINE', cls: 'text-zinc-500' };
+/* ── Camera stream status: ONLINE (recent success) / OFFLINE (stream down) ── */
+function camStatus(camId, health, healthOnline, nowMs) {
+  if (!healthOnline) return { label: 'OFFLINE', cls: 'text-red-400', online: false };
   const cam = health?.cameras?.[camId];
-  if (!cam?.last_success_utc) return { label: 'NO DATA', cls: 'text-zinc-500' };
-  const ageMin = Math.floor((nowMs - new Date(cam.last_success_utc).getTime()) / 60000);
-  if (ageMin < 10) return { label: 'LIVE', cls: 'text-emerald-400' };
-  return { label: `STALE ${ageMin}m`, cls: 'text-amber-400' };
+  const successMs = cam?.last_success_utc ? new Date(cam.last_success_utc).getTime() : null;
+  const errorMs = cam?.last_error_utc ? new Date(cam.last_error_utc).getTime() : null;
+  const fresh = successMs != null && nowMs > 0 && nowMs - successMs < 600000;
+  const notErroring = errorMs == null || (successMs != null && successMs >= errorMs);
+  const online = fresh && notErroring;
+  return online
+    ? { label: 'ONLINE', cls: 'text-emerald-400', online: true }
+    : { label: 'OFFLINE', cls: 'text-red-400', online: false };
 }
 
 /* ── Sparkline: the last N real values, no simulation ── */
@@ -131,7 +135,12 @@ const CamerasPage = () => {
   }, [user?.id]);
 
   /* ── Derived values (all computed from Supabase rows) ── */
-  const networkVehicles = loads.reduce((s, l) => s + (Number(l.vehicle_count) || 0), 0);
+  // Only cameras with a working stream count toward the network total —
+  // a dead camera's last-known count is stale and must not be counted.
+  const networkVehicles = loads.reduce((s, l) => {
+    const st = camStatus(l.camera_id, pipelineHealth, pipelineOnline, nowMs);
+    return st.online ? s + (Number(l.vehicle_count) || 0) : s;
+  }, 0);
   const ci = networkCongestion;
   const congestionClass =
     ci < 40 ? 'congestion-low' : ci < 65 ? 'congestion-mid' : ci < 80 ? 'congestion-high' : 'congestion-severe';
@@ -296,7 +305,7 @@ const CamerasPage = () => {
                   const level = load.load_level || 'low';
                   const color = getLoadColor(level);
                   const name = prettyCamName(cam.name);
-                  const badge = pipelineBadge(cam.id, pipelineHealth, pipelineOnline, nowMs);
+                  const status = camStatus(cam.id, pipelineHealth, pipelineOnline, nowMs);
                   return (
                     <div key={cam.id} className="relative group cursor-pointer"
                       style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', background: '#000', aspectRatio: '16 / 10' }}
@@ -305,26 +314,32 @@ const CamerasPage = () => {
                         if (feed) { setCameraStatus('loading'); setSelectedCamera(feed); }
                       }}
                     >
-                      <img
-                        src={snapshotUrl(cam.name, snapTick)}
-                        alt={name}
-                        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
-                        onLoad={(e) => {
-                          const sib = e.target.nextSibling;
-                          if (sib && sib.textContent !== '') sib.style.display = 'none';
-                        }}
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          const sib = e.target.nextSibling;
-                          if (sib) sib.style.display = 'flex';
-                        }}
-                      />
-                      <div className="absolute inset-0 items-center justify-center text-[10px] uppercase tracking-[0.2em] text-gray-500 hidden">no snapshot</div>
+                      {status.online ? (
+                        <>
+                          <img
+                            src={snapshotUrl(cam.name, snapTick)}
+                            alt={name}
+                            style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+                            onLoad={(e) => {
+                              const sib = e.target.nextSibling;
+                              if (sib && sib.textContent !== '') sib.style.display = 'none';
+                            }}
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              const sib = e.target.nextSibling;
+                              if (sib) sib.style.display = 'flex';
+                            }}
+                          />
+                          <div className="absolute inset-0 items-center justify-center text-[10px] uppercase tracking-[0.2em] text-gray-500 hidden">no signal</div>
+                        </>
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-[0.2em] text-gray-500">no signal</div>
+                      )}
                       <div className="absolute inset-0 bg-black/15 group-hover:bg-black/5 transition-colors pointer-events-none" />
-                      <div className={`absolute top-1.5 left-1.5 text-[8px] font-mono bg-black/50 px-1 py-0.5 rounded ${badge.cls}`}>{badge.label}</div>
+                      <div className={`absolute top-1.5 left-1.5 text-[8px] font-mono bg-black/50 px-1 py-0.5 rounded ${status.cls}`}>{status.label}</div>
                       <div className="absolute bottom-1.5 left-1.5 text-[8px] font-mono text-white/50 bg-black/50 px-1 py-0.5 rounded">{name}</div>
-                      <div className="absolute bottom-1.5 right-1.5 text-[8px] font-mono text-white/70 bg-black/50 px-1 py-0.5 rounded">{load.vehicle_count ?? '—'} veh</div>
-                      <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                      <div className="absolute bottom-1.5 right-1.5 text-[8px] font-mono text-white/70 bg-black/50 px-1 py-0.5 rounded">{status.online ? `${load.vehicle_count ?? '—'} veh` : 'na'}</div>
+                      <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: status.online ? color : '#52525b' }} />
                     </div>
                   );
                 })}
@@ -437,7 +452,7 @@ const CamerasPage = () => {
                   </div>
                   <ThroughputChart today={hourlyToday} yesterday={hourlyYesterday} />
                   <div className="flex justify-between mt-2 text-[9px] text-zinc-600 font-mono">
-                    <span>12AM</span><span>4AM</span><span>8AM</span><span>12PM</span><span>4PM</span><span>8PM</span>
+                    <span>12AM</span><span>6AM</span><span>12PM</span><span>6PM</span><span>11PM</span>
                   </div>
                 </div>
 
