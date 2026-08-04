@@ -314,26 +314,26 @@ const CamerasPage = () => {
                         if (feed) { setCameraStatus('loading'); setSelectedCamera(feed); }
                       }}
                     >
-                      {status.online ? (
-                        <>
-                          <img
-                            src={snapshotUrl(cam.name, snapTick)}
-                            alt={name}
-                            style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
-                            onLoad={(e) => {
-                              const sib = e.target.nextSibling;
-                              if (sib && sib.textContent !== '') sib.style.display = 'none';
-                            }}
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                              const sib = e.target.nextSibling;
-                              if (sib) sib.style.display = 'flex';
-                            }}
-                          />
-                          <div className="absolute inset-0 items-center justify-center text-[10px] uppercase tracking-[0.2em] text-gray-500 hidden">no signal</div>
-                        </>
-                      ) : (
-                        <div className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-[0.2em] text-gray-500">no signal</div>
+                      {/* Snapshot always attempts to load — it is itself the
+                          ground truth.  The OFFLINE overlay only covers it
+                          when the pipeline health says the camera is down. */}
+                      <img
+                        src={snapshotUrl(cam.name, snapTick)}
+                        alt={name}
+                        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+                        onLoad={(e) => {
+                          const sib = e.target.nextSibling;
+                          if (sib && sib.textContent !== '') sib.style.display = 'none';
+                        }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const sib = e.target.nextSibling;
+                          if (sib) sib.style.display = 'flex';
+                        }}
+                      />
+                      <div className="absolute inset-0 items-center justify-center text-[10px] uppercase tracking-[0.2em] text-gray-500 hidden">no signal</div>
+                      {!status.online && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black text-[10px] uppercase tracking-[0.2em] text-gray-500 z-10">no signal</div>
                       )}
                       <div className="absolute inset-0 bg-black/15 group-hover:bg-black/5 transition-colors pointer-events-none" />
                       <div className={`absolute top-1.5 left-1.5 text-[8px] font-mono bg-black/50 px-1 py-0.5 rounded ${status.cls}`}>{status.label}</div>
