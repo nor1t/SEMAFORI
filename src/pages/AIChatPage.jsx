@@ -11,8 +11,10 @@ import {
   getLoadColor,
 } from '../shared/trafficData';
 import useTrafficData from '../hooks/useTrafficData';
+import { useAuth } from '../hooks/useAuth';
 import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
+import AuthPromptModal from '../components/AuthPromptModal';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
@@ -130,6 +132,7 @@ const quickPrompts = [
 const AIChatPage = () => {
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const { user } = useAuth();
   const {
     loads,
     counts,
@@ -140,6 +143,7 @@ const AIChatPage = () => {
   } = useTrafficData();
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
+  const [authPromptOpen, setAuthPromptOpen] = useState(false);
   const [messages, setMessages] = useState([
     { id: 'assistant-welcome', role: 'assistant', content: 'Ask me about congestion, junction priorities, or a route in the format "from A to B". I answer with live counts from the four Prishtina cameras and can add launch links for Google Maps, Waze, and Apple Maps.', links: [], source: 'SEMAFORI AI', timestamp: new Date() },
   ]);
@@ -169,9 +173,25 @@ const AIChatPage = () => {
     setTimeout(() => { if (inputRef.current) inputRef.current.focus(); }, 800);
   }, []);
 
+  /* Restore the message a guest drafted before being asked to log in */
+  useEffect(() => {
+    const draft = sessionStorage.getItem('semafori_chat_draft');
+    if (draft) {
+      setInput(draft);
+      sessionStorage.removeItem('semafori_chat_draft');
+    }
+  }, []);
+
   const handleSend = async (presetValue) => {
     const nextInput = (presetValue ?? input).trim();
     if (!nextInput || typing) return;
+    /* Chatting requires an account — guests are sent through the existing
+       login flow and returned here; the drafted message is preserved. */
+    if (!user) {
+      sessionStorage.setItem('semafori_chat_draft', nextInput);
+      setAuthPromptOpen(true);
+      return;
+    }
     const userMessage = { id: `user-${Date.now()}`, role: 'user', content: nextInput, links: [], timestamp: new Date() };
     const history = [...messages, userMessage];
     setMessages(history);
@@ -206,18 +226,18 @@ const AIChatPage = () => {
     : '—';
 
   return (
-    <div style={{ background: '#09090b', minHeight: '100vh', color: '#fff' }}>
+    <div className="theme-cockpit" style={{ background: 'var(--app-bg)', minHeight: '100vh', color: 'var(--app-fg)' }}>
       <style>{`
-        .glass-card { background: rgba(255,255,255,0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
-        .glass-card:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
-        .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: #71717a; }
-        .progress-track { background: rgba(255,255,255,0.06); border-radius: 9999px; overflow: hidden; height: 4px; }
+        .glass-card { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--card-border); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
+        .glass-card:hover { background: var(--card-bg-hover); border-color: var(--card-border-hover); }
+        .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+        .progress-track { background: var(--track-bg); border-radius: 9999px; overflow: hidden; height: 4px; }
         .progress-fill { height: 100%; border-radius: 9999px; transition: width 1s cubic-bezier(0.16,1,0.3,1); }
         .msg-user { background: rgba(249,115,22,0.08); border: 1px solid rgba(249,115,22,0.15); }
-        .msg-ai { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
-        .input-area { background: rgba(255,255,255,0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); transition: border-color 0.3s ease, box-shadow 0.3s ease; }
+        .msg-ai { background: var(--card-bg); border: 1px solid var(--card-border); }
+        .input-area { background: var(--input-bg); backdrop-filter: blur(10px); border: 1px solid var(--input-border); transition: border-color 0.3s ease, box-shadow 0.3s ease; }
         .input-area:focus-within { border-color: rgba(249,115,22,0.3); box-shadow: 0 0 20px -5px rgba(249,115,22,0.1); }
-        .suggestion-chip { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); transition: all 0.3s ease; cursor: pointer; }
+        .suggestion-chip { background: var(--chip-bg); border: 1px solid var(--card-border); transition: all 0.3s ease; cursor: pointer; }
         .suggestion-chip:hover { background: rgba(249,115,22,0.08); border-color: rgba(249,115,22,0.2); transform: translateY(-1px); }
         .typing-dot { width: 5px; height: 5px; border-radius: 9999px; background: #71717a; animation: typingBounce 1.4s ease-in-out infinite; }
         .typing-dot:nth-child(2) { animation-delay: 0.2s; }
@@ -280,7 +300,7 @@ const AIChatPage = () => {
                     {message.role === 'assistant' && (
                       <div className="flex items-center gap-2 mb-2">
                         <div className="w-5 h-5 rounded-md bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center">
-                          <iconify-icon icon="lucide:sparkles" width="10" className="text-white" />
+                          <iconify-icon icon="lucide:sparkles" width="10" className="text-white keep-white" />
                         </div>
                         <span className="text-[10px] font-medium text-zinc-500">{message.source || 'SEMAFORI AI'}</span>
                         <span className="text-[9px] text-zinc-600 font-mono">{message.timestamp?.toLocaleTimeString?.('en-US', { hour12: false }) || ''}</span>
@@ -313,7 +333,7 @@ const AIChatPage = () => {
                 <div className="flex justify-start msg-in">
                   <div className="msg-ai rounded-2xl rounded-tl-md px-4 py-3 flex items-center gap-3">
                     <div className="w-5 h-5 rounded-md bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center">
-                      <iconify-icon icon="lucide:sparkles" width="10" className="text-white" />
+                      <iconify-icon icon="lucide:sparkles" width="10" className="text-white keep-white" />
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="typing-dot" />
@@ -333,6 +353,16 @@ const AIChatPage = () => {
                 ))}
               </div>
             </div>
+
+            {/* Guest notice — chatting requires an account */}
+            {!user && (
+              <div className="px-5 pb-2">
+                <div className="auth-hint">
+                  <iconify-icon icon="lucide:lock" width="12" className="flex-shrink-0" />
+                  <span>You are browsing as a guest — log in to send messages. Your draft will be kept.</span>
+                </div>
+              </div>
+            )}
 
             {/* Input */}
             <div className="px-5 pb-4 pt-1">
@@ -505,6 +535,14 @@ const AIChatPage = () => {
           </div>
         </div>
       </main>
+
+      {/* Login prompt — shown when a guest tries to send a message */}
+      <AuthPromptModal
+        open={authPromptOpen}
+        onClose={() => setAuthPromptOpen(false)}
+        from="/ai-chat"
+        message="You need to log in or sign up to chat with the AI assistant. Your message is saved and will be waiting for you when you get back."
+      />
 
       <SiteFooter />
     </div>

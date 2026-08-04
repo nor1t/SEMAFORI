@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import BrandMark from '../components/BrandMark';
 import Input from '../components/Input';
 import { translations } from '../context/LanguageContext';
@@ -9,11 +9,14 @@ import { useAuth } from '../hooks/useAuth';
 const Login = () => {
   const { theme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const { signIn, loading } = useAuth();
   const copy = translations.albanian;
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState('');
+  // Where to return after login (set by the action-level auth gates).
+  const from = location.state?.from;
 
   const validateForm = () => {
     const newErrors = {};
@@ -57,7 +60,7 @@ const Login = () => {
       return;
     }
 
-    navigate('/cameras');
+    navigate(from || '/cameras', { replace: true });
   };
 
   return (
@@ -101,6 +104,12 @@ const Login = () => {
         <div className={`rounded-2xl border p-8 shadow-2xl backdrop-blur-xl animate-fade-in ${theme === 'dark'
           ? 'bg-navy-800/50 border-navy-600/20'
           : 'bg-white/80 border-gray-200'}`} style={{animationDelay:'0.3s', animationFillMode:'both'}}>
+          {from && (
+            <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${theme === 'dark' ? 'border-tblue-500/30 bg-tblue-500/10 text-tblue-200' : 'border-tblue-300 bg-tblue-50 text-tblue-700'}`}>
+              Sign in to continue where you left off.
+            </div>
+          )}
+
           {serverError && (
             <div className={`mb-6 rounded-2xl border px-4 py-3 ${theme === 'dark' ? 'border-red-500/40 bg-red-500/10' : 'border-red-300 bg-red-50'}`}>
               <p className={`mb-2 ${theme === 'dark' ? 'text-red-200' : 'text-red-700'}`}>{serverError}</p>
@@ -161,7 +170,7 @@ const Login = () => {
           <div className={`mt-8 text-center text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
             <p>
               {copy.loginNoAccount}{' '}
-              <Link to="/signup" className={`font-medium transition hover:text-tblue-400 ${theme === 'dark' ? 'text-tblue-300' : 'text-tblue-600'}`}>
+              <Link to="/signup" state={{ from }} className={`font-medium transition hover:text-tblue-400 ${theme === 'dark' ? 'text-tblue-300' : 'text-tblue-600'}`}>
                 {copy.loginSignupLink}
               </Link>
             </p>

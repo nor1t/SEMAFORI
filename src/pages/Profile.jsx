@@ -156,7 +156,7 @@ const Profile = () => {
 
   if (authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center" style={{ background: '#09090b' }}>
+      <div className="flex min-h-screen items-center justify-center theme-cockpit" style={{ background: 'var(--app-bg)' }}>
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
       </div>
     );
@@ -166,29 +166,29 @@ const Profile = () => {
   const name = profileData.full_name || 'Traffic Operator';
 
   return (
-    <div style={{ background: '#09090b', minHeight: '100vh', color: '#fff' }}>
+    <div className="theme-cockpit" style={{ background: 'var(--app-bg)', minHeight: '100vh', color: 'var(--app-fg)' }}>
       <style>{`
         @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
         .anim { animation: fadeUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards; }
         .d1{animation-delay:0.03s;opacity:0}.d2{animation-delay:0.08s;opacity:0}.d3{animation-delay:0.13s;opacity:0}.d4{animation-delay:0.18s;opacity:0}.d5{animation-delay:0.23s;opacity:0}
-        .tab-btn{font-size:13px;font-weight:400;color:#52525b;padding:8px 0;position:relative;transition:color 0.2s;cursor:pointer;background:none;border:none}
-        .tab-btn:hover{color:#a1a1aa}
-        .tab-btn.active{color:#fff;font-weight:500}
-        .tab-btn.active::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:1px;background:#fff}
-        .field-group label{display:block;font-size:11px;font-weight:500;color:#3f3f46;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em}
-        .field-display{font-size:14px;font-weight:300;color:#d4d4d8;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.03);min-height:38px;display:flex;align-items:center}
-        .field-input{width:100%;font-size:14px;font-weight:300;color:#fff;background:transparent;border:none;border-bottom:1px solid rgba(249,115,22,0.25);padding:9px 0;outline:none;font-family:Inter,sans-serif;transition:border-color 0.2s}
+        .tab-btn{font-size:13px;font-weight:400;color:var(--text-dim);padding:8px 0;position:relative;transition:color 0.2s;cursor:pointer;background:none;border:none}
+        .tab-btn:hover{color:var(--text-strong)}
+        .tab-btn.active{color:var(--text-strong);font-weight:500}
+        .tab-btn.active::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:1px;background:var(--text-strong)}
+        .field-group label{display:block;font-size:11px;font-weight:500;color:var(--text-dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em}
+        .field-display{font-size:14px;font-weight:300;color:var(--text-strong);padding:9px 0;border-bottom:1px solid var(--card-border);min-height:38px;display:flex;align-items:center}
+        .field-input{width:100%;font-size:14px;font-weight:300;color:var(--input-fg);background:transparent;border:none;border-bottom:1px solid rgba(249,115,22,0.25);padding:9px 0;outline:none;font-family:Inter,sans-serif;transition:border-color 0.2s}
         .field-input:focus{border-bottom-color:#f97316}
-        .field-input::placeholder{color:#27272a}
+        .field-input::placeholder{color:var(--text-dim)}
         textarea.field-input{border:1px solid rgba(249,115,22,0.25);border-radius:8px;padding:10px 12px;resize:none;line-height:1.6}
         textarea.field-input:focus{border-color:#f97316}
-        .pill{font-size:11px;padding:3px 10px;border-radius:9999px;border:1px solid rgba(255,255,255,0.05);color:#52525b;background:transparent;transition:all 0.2s}
+        .pill{font-size:11px;padding:3px 10px;border-radius:9999px;border:1px solid var(--card-border);color:var(--text-dim);background:transparent;transition:all 0.2s}
         .skill-row{display:flex;align-items:center;gap:12px;padding:6px 0}
-        .skill-name{font-size:13px;color:#a1a1aa;font-weight:300;width:130px;flex-shrink:0}
-        .skill-bar-bg{flex:1;height:3px;border-radius:99px;background:rgba(255,255,255,0.04);overflow:hidden}
+        .skill-name{font-size:13px;color:var(--text-dim);font-weight:300;width:130px;flex-shrink:0}
+        .skill-bar-bg{flex:1;height:3px;border-radius:99px;background:var(--track-bg);overflow:hidden}
         .skill-bar-fill{height:100%;border-radius:99px;transition:width 0.8s cubic-bezier(0.16,1,0.3,1)}
-        .skill-pct{font-size:11px;color:#3f3f46;font-family:monospace;width:30px;text-align:right}
-        .act-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+        .skill-pct{font-size:11px;color:var(--text-dim);font-family:monospace;width:30px;text-align:right}
+        .act-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--card-border)}
         .act-item:last-child{border-bottom:none}
         .act-dot{width:6px;height:6px;border-radius:9999px;margin-top:6px;flex-shrink:0}
         .bg-glow{position:fixed;width:500px;height:300px;border-radius:9999px;filter:blur(140px);opacity:0.035;pointer-events:none;z-index:-10}
@@ -462,8 +462,9 @@ const Profile = () => {
         )}
       </main>
 
-      {/* Toast */}
-      <div className="fixed bottom-8 left-1/2 z-[100] px-4 py-2 rounded-lg text-[12px] text-zinc-300 font-medium flex items-center gap-2 transition-all duration-300 pointer-events-none" style={{ background: 'rgba(24,24,27,0.9)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(10px)', opacity: toast.visible ? 1 : 0, transform: toast.visible ? 'translate(-50%, 0)' : 'translate(-50%, 12px)' }}>
+      {/* Toast — intentionally dark in both themes; colors are inline so the
+          light-mode cockpit remaps don't touch them. */}
+      <div className="fixed bottom-8 left-1/2 z-[100] px-4 py-2 rounded-lg text-[12px] font-medium flex items-center gap-2 transition-all duration-300 pointer-events-none" style={{ background: 'rgba(24,24,27,0.9)', color: '#d4d4d8', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(10px)', opacity: toast.visible ? 1 : 0, transform: toast.visible ? 'translate(-50%, 0)' : 'translate(-50%, 12px)' }}>
         <iconify-icon icon={toast.type === 'error' ? 'lucide:x-circle' : toast.type === 'info' ? 'lucide:minus-circle' : 'lucide:check'} width="12" className={toast.type === 'error' ? 'text-red-400' : toast.type === 'info' ? 'text-zinc-500' : 'text-emerald-400'} />
         <span>{toast.text}</span>
       </div>

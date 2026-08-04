@@ -97,3 +97,96 @@
   position: relative;
   z-index: 1;
 }
+
+/* ── Theme system: shared variables (light = :root, dark = .dark) ─────── */
+:root {
+  --app-bg: #f4f4f5;
+  --app-fg: #18181b;
+  --card-bg: rgba(0, 0, 0, 0.03);
+  --card-border: rgba(0, 0, 0, 0.08);
+  --card-bg-hover: rgba(0, 0, 0, 0.05);
+  --card-border-hover: rgba(0, 0, 0, 0.16);
+  --text-dim: #71717a;
+  --text-strong: #18181b;
+  --track-bg: rgba(0, 0, 0, 0.08);
+  --input-bg: rgba(0, 0, 0, 0.03);
+  --input-border: rgba(0, 0, 0, 0.1);
+  --input-fg: #18181b;
+  --chip-bg: rgba(0, 0, 0, 0.04);
+  --tooltip-bg: #ffffff;
+  --tooltip-border: #e4e4e7;
+}
+
+.dark {
+  --app-bg: #09090b;
+  --app-fg: #ffffff;
+  --card-bg: rgba(255, 255, 255, 0.03);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-bg-hover: rgba(255, 255, 255, 0.05);
+  --card-border-hover: rgba(255, 255, 255, 0.15);
+  --text-dim: #71717a;
+  --text-strong: #ffffff;
+  --track-bg: rgba(255, 255, 255, 0.06);
+  --input-bg: rgba(255, 255, 255, 0.03);
+  --input-border: rgba(255, 255, 255, 0.08);
+  --input-fg: #ffffff;
+  --chip-bg: rgba(255, 255, 255, 0.05);
+  --tooltip-bg: #18181b;
+  --tooltip-border: #27272a;
+}
+
+/* ── Auth hint banner (guest prompts on the cockpit pages) ───────────── */
+.auth-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(234, 88, 12, 0.3);
+  background: rgba(249, 115, 22, 0.07);
+  color: #c2410c;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.dark .auth-hint {
+  border-color: rgba(249, 115, 22, 0.25);
+  background: rgba(249, 115, 22, 0.1);
+  color: #fdba74;
+}
+
+/* ── Light-mode utility remaps for the dark-first cockpit pages ─────────
+   The cockpit pages (class "theme-cockpit") were designed dark-first
+   (zinc/white utility ramp on #09090b).  The rules below remap those
+   utilities to readable light-mode equivalents so light mode works
+   everywhere without touching component markup.  They only apply when
+   <body> has no .dark class, and only inside .theme-cockpit shells, so
+   theme-aware components (header, auth pages, colored buttons) are
+   unaffected.  Elements that must stay white on colored/imagery
+   backgrounds opt out with .keep-white. */
+body:not(.dark) .theme-cockpit .text-white:not(.keep-white) { color: #18181b !important; }
+body:not(.dark) .theme-cockpit .hover\:text-white:hover { color: #18181b !important; }
+body:not(.dark) .theme-cockpit .text-zinc-100 { color: #27272a !important; }
+body:not(.dark) .theme-cockpit .text-zinc-200 { color: #3f3f46 !important; }
+body:not(.dark) .theme-cockpit .text-zinc-300 { color: #52525b !important; }
+body:not(.dark) .theme-cockpit .text-zinc-400 { color: #71717a !important; }
+body:not(.dark) .theme-cockpit .text-tblue-300 { color: #1d4ed8 !important; }
+
+body:not(.dark) .theme-cockpit .bg-white { background-color: #18181b !important; }
+body:not(.dark) .theme-cockpit .text-black { color: #fafafa !important; }
+
+body:not(.dark) .theme-cockpit .bg-white\/5 { background-color: rgba(0, 0, 0, 0.05) !important; }
+body:not(.dark) .theme-cockpit .bg-white\/10 { background-color: rgba(0, 0, 0, 0.08) !important; }
+body:not(.dark) .theme-cockpit .hover\:bg-white\/5:hover { background-color: rgba(0, 0, 0, 0.06) !important; }
+body:not(.dark) .theme-cockpit .hover\:bg-white\/10:hover { background-color: rgba(0, 0, 0, 0.1) !important; }
+body:not(.dark) .theme-cockpit .bg-white\/\[0\.02\] { background-color: rgba(0, 0, 0, 0.02) !important; }
+body:not(.dark) .theme-cockpit .bg-white\/\[0\.03\] { background-color: rgba(0, 0, 0, 0.03) !important; }
+body:not(.dark) .theme-cockpit .bg-white\/\[0\.05\] { background-color: rgba(0, 0, 0, 0.05) !important; }
+body:not(.dark) .theme-cockpit .bg-white\/\[0\.08\] { background-color: rgba(0, 0, 0, 0.06) !important; }
+body:not(.dark) .theme-cockpit .border-white\/40 { border-color: rgba(0, 0, 0, 0.25) !important; }
+
+body:not(.dark) .theme-cockpit [class*="bg-zinc-800"] { background-color: #e4e4e7 !important; }
+body:not(.dark) .theme-cockpit [class*="border-zinc-800"] { border-color: #e4e4e7 !important; }
+body:not(.dark) .theme-cockpit [class*="border-zinc-700"] { border-color: #d4d4d8 !important; }
+
+body:not(.dark) .theme-cockpit .form-input option { color: #18181b; background: #ffffff; }

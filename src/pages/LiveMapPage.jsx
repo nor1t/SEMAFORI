@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '../context/ThemeContext';
 import useTrafficData from '../hooks/useTrafficData';
 import { createIncidentReport, fetchIncidentReports } from '../services/reportService';
 import { APIProvider, Map, Marker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
@@ -86,6 +88,9 @@ const prettyCamName = (slug) =>
 
 const LiveMapPage = () => {
   const { user } = useAuth();
+  const { theme } = useTheme();
+  const navigate = useNavigate();
+  const dark = theme === 'dark';
   const { loads, counts } = useTrafficData();
   const [reports, setReports] = useState([]);
   const [savedMarkers, setSavedMarkers] = useState([]);
@@ -133,6 +138,28 @@ const LiveMapPage = () => {
     return () => { cancelled = true; };
   }, [user?.id]);
 
+  /* ── Restore a report drafted before the guest was asked to log in ── */
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('semafori_report_draft');
+      if (!raw) return;
+      sessionStorage.removeItem('semafori_report_draft');
+      const d = JSON.parse(raw);
+      if (d.incidentType) setIncidentType(d.incidentType);
+      if (d.severity) setSeverity(d.severity);
+      if (Number.isFinite(d.pickLat) && Number.isFinite(d.pickLng)) {
+        setPickLat(d.pickLat);
+        setPickLng(d.pickLng);
+        setPickLoc(`${d.pickLat.toFixed(5)}, ${d.pickLng.toFixed(5)}`);
+      }
+      if (d.desc) setDesc(d.desc);
+      if (d.lanes) setLanes(d.lanes);
+      if (d.duration) setDuration(d.duration);
+      if (d.emergency) setEmergency(true);
+      setActiveTab('report');
+    } catch { /* ignore a malformed draft */ }
+  }, []);
+
   /* ── Camera markers from live traffic_load (real) ── */
   const cameraMarkers = CAMERA_LOCATIONS.map((cam) => {
     const load = loads.find((l) => l.camera_id === cam.id) || {};
@@ -161,7 +188,15 @@ const LiveMapPage = () => {
     if (!severity) { setMarkerError('Select severity level'); return; }
     if (!pickLat || !pickLng) { setMarkerError('Click the map to set location'); return; }
     if (!desc.trim()) { setMarkerError('Add a description'); return; }
-    if (!user?.id) { setMarkerError('Sign in to save markers'); return; }
+    /* Submitting requires an account — guests go through the existing login
+       flow and come back; the completed form is preserved as a draft. */
+    if (!user?.id) {
+      sessionStorage.setItem('semafori_report_draft', JSON.stringify({
+        incidentType, severity, desc, pickLat, pickLng, lanes, duration, emergency,
+      }));
+      navigate('/login', { state: { from: '/live-map' } });
+      return;
+    }
 
     setSavingMarker(true);
     setMarkerError('');
@@ -206,20 +241,20 @@ const LiveMapPage = () => {
   };
 
   return (
-    <div style={{ background: '#09090b', minHeight: '100vh', color: '#fff' }}>
+    <div className="theme-cockpit" style={{ background: 'var(--app-bg)', minHeight: '100vh', color: 'var(--app-fg)' }}>
       <style>{`
-        .glass-panel { background: rgba(255,255,255,0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); }
-        .glass-card { background: rgba(255,255,255,0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
-        .glass-card:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
-        .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: #71717a; }
-        .progress-track { background: rgba(255,255,255,0.06); border-radius: 9999px; overflow: hidden; height: 4px; }
+        .glass-panel { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--card-border); }
+        .glass-card { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--card-border); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
+        .glass-card:hover { background: var(--card-bg-hover); border-color: var(--card-border-hover); }
+        .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+        .progress-track { background: var(--track-bg); border-radius: 9999px; overflow: hidden; height: 4px; }
         .progress-fill { height: 100%; border-radius: 9999px; transition: width 0.8s cubic-bezier(0.16,1,0.3,1); }
         .bg-glow { position: fixed; border-radius: 9999px; filter: blur(120px); opacity: 0.04; pointer-events: none; z-index: -10; }
-        .form-input { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 8px 12px; font-size: 12px; color: #fff; outline: none; width: 100%; transition: border-color 0.3s ease, box-shadow 0.3s ease; }
+        .form-input { background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 10px; padding: 8px 12px; font-size: 12px; color: var(--input-fg); outline: none; width: 100%; transition: border-color 0.3s ease, box-shadow 0.3s ease; }
         .form-input:focus { border-color: rgba(249,115,22,0.3); box-shadow: 0 0 0 3px rgba(249,115,22,0.08); }
-        .form-input::placeholder { color: #3f3f46; }
-        .severity-btn { flex: 1; padding: 6px 4px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); color: #71717a; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: all 0.2s ease; text-align: center; }
-        .severity-btn:hover { background: rgba(255,255,255,0.05); color: #a1a1aa; }
+        .form-input::placeholder { color: var(--text-dim); }
+        .severity-btn { flex: 1; padding: 6px 4px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--chip-bg); color: var(--text-dim); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: all 0.2s ease; text-align: center; }
+        .severity-btn:hover { background: var(--card-bg-hover); color: var(--text-strong); }
         .severity-btn.active-low { background: rgba(74,222,128,0.1); border-color: rgba(74,222,128,0.3); color: #4ade80; }
         .severity-btn.active-mod { background: rgba(250,204,21,0.1); border-color: rgba(250,204,21,0.3); color: #facc15; }
         .severity-btn.active-high { background: rgba(249,115,22,0.1); border-color: rgba(249,115,22,0.3); color: #f97316; }
@@ -229,7 +264,7 @@ const LiveMapPage = () => {
         .anim { animation: fadeInUp 0.7s cubic-bezier(0.16,1,0.3,1) forwards; }
         .d1{animation-delay:0.05s;opacity:0}.d2{animation-delay:0.1s;opacity:0}.d3{animation-delay:0.15s;opacity:0}.d4{animation-delay:0.2s;opacity:0}.d5{animation-delay:0.25s;opacity:0}
         .incident-item { transition: all 0.3s ease; cursor: pointer; }
-        .incident-item:hover { background: rgba(255,255,255,0.03); }
+        .incident-item:hover { background: var(--card-bg); }
       `}</style>
 
       <div className="bg-glow" style={{ top: '-100px', left: '200px', width: '500px', height: '400px', background: '#f97316' }} />
@@ -253,7 +288,7 @@ const LiveMapPage = () => {
                 defaultCenter={{ lat: MAP_CENTER[0], lng: MAP_CENTER[1] }}
                 defaultZoom={13}
                 mapTypeId={mapType}
-                styles={DARK_MAP_STYLES}
+                styles={dark ? DARK_MAP_STYLES : []}
                 disableDefaultUI
                 zoomControl
                 gestureHandling="greedy"
@@ -277,7 +312,7 @@ const LiveMapPage = () => {
                     key={m.id}
                     position={{ lat: m.lat, lng: m.lng }}
                     icon={circleIcon(getLoadColor(m.load_level), 9)}
-                    onClick={() => setSelectedMarker(m)}
+                    onClick={() => { setSelectedMarker(m); setActiveTab('stats'); }}
                   />
                 ))}
 
@@ -287,7 +322,7 @@ const LiveMapPage = () => {
                     key={m.id}
                     position={{ lat: m.lat, lng: m.lng }}
                     icon={circleIcon('#06b6d4', 7)}
-                    onClick={() => setSelectedMarker(m)}
+                    onClick={() => { setSelectedMarker(m); setActiveTab('stats'); }}
                   />
                 ))}
 
@@ -391,7 +426,7 @@ const LiveMapPage = () => {
         </div>
 
         {/* ══════════ Right Panel ══════════ */}
-        <div className="w-[360px] xl:w-[380px] border-l border-zinc-800/50 flex flex-col h-full bg-[#09090b]">
+        <div className="w-[360px] xl:w-[380px] border-l border-zinc-800/50 flex flex-col h-full" style={{ background: 'var(--app-bg)' }}>
           {/* Panel Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/50 flex-shrink-0">
             <div className="flex items-center gap-2">
@@ -408,7 +443,13 @@ const LiveMapPage = () => {
           <div className="flex-1 overflow-y-auto right-scroll">
             {/* ═══ Report Tab ═══ */}
             {activeTab === 'report' && (
-              <div className="p-4 space-y-4 anim d2">
+              <div className={`relative p-4 anim d2 ${!user ? 'max-h-[380px] overflow-hidden' : ''}`}>
+                {/* Reporting requires an account — guests see the form blurred
+                    behind a login prompt and can only view the stats tabs. */}
+                <div
+                  className={`space-y-4 ${!user ? 'pointer-events-none select-none blur-sm' : ''}`}
+                  inert={!user}
+                >
                 <div>
                   <label className="stat-label block mb-1.5">Incident Type</label>
                   <select className="form-input" value={incidentType} onChange={(e) => setIncidentType(e.target.value)}>
@@ -477,10 +518,38 @@ const LiveMapPage = () => {
                   <div className="rounded-xl px-3 py-2 text-[11px] bg-red-500/10 border border-red-500/20 text-red-400">{markerError}</div>
                 )}
 
+                {!user && (
+                  <div className="auth-hint">
+                    <iconify-icon icon="lucide:lock" width="12" className="flex-shrink-0" />
+                    <span>You are browsing as a guest — log in to submit a report. Your entries will be kept.</span>
+                  </div>
+                )}
+
                 <button onClick={handleSubmit} disabled={savingMarker} className="w-full py-2.5 rounded-xl bg-white text-black text-[12px] font-semibold hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50" style={{ boxShadow: '0 0 20px -5px rgba(255,255,255,0.3)' }}>
                   <iconify-icon icon="lucide:send" width="14" />
                   {savingMarker ? 'Submitting...' : 'Submit Report'}
                 </button>
+                </div>
+
+                {/* Guest lock overlay — covers the blurred report form */}
+                {!user && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-xl bg-black/40 p-4 text-center">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-orange-500/25 bg-orange-500/10">
+                      <iconify-icon icon="lucide:lock" width="15" className="text-orange-400" />
+                    </div>
+                    <div className="text-xs font-semibold">Login required</div>
+                    <p className="max-w-[220px] text-[10px] leading-relaxed text-zinc-500">
+                      Log in or create an account to report incidents. Your entries are kept and restored after login.
+                    </p>
+                    <button
+                      onClick={() => navigate('/login', { state: { from: '/live-map' } })}
+                      className="mt-1 flex items-center gap-1.5 rounded-lg bg-white px-4 py-1.5 text-[11px] font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
+                    >
+                      <iconify-icon icon="lucide:log-in" width="12" />
+                      Log in
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

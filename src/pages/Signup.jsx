@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import BrandMark from '../components/BrandMark';
 import Input from '../components/Input';
 import { translations } from '../context/LanguageContext';
@@ -9,8 +9,11 @@ import { useAuth } from '../hooks/useAuth';
 const Signup = () => {
   const { theme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const { signUp, loading } = useAuth();
   const copy = translations.albanian;
+  // Preserve the return-to path through the signup → login handoff.
+  const from = location.state?.from;
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -80,7 +83,7 @@ const Signup = () => {
     }
 
     setSuccessMessage(copy.signupSuccess);
-    setTimeout(() => navigate('/login'), 1800);
+    setTimeout(() => navigate('/login', { state: { from } }), 1800);
   };
 
   return (
@@ -210,7 +213,7 @@ const Signup = () => {
           <div className={`mt-8 text-center text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
             <p>
               {copy.signupAlreadyHaveAccount}{' '}
-              <Link to="/login" className={`font-medium transition hover:text-tblue-400 ${theme === 'dark' ? 'text-tblue-300' : 'text-tblue-600'}`}>
+              <Link to="/login" state={{ from }} className={`font-medium transition hover:text-tblue-400 ${theme === 'dark' ? 'text-tblue-300' : 'text-tblue-600'}`}>
                 {copy.signupLoginLink}
               </Link>
             </p>

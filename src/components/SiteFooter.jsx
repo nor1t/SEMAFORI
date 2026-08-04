@@ -2,36 +2,12 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 
-const footerColumns = [
-  {
-    title: 'Platform',
-    links: [
-      { label: 'Live Cameras', to: '/cameras' },
-      { label: 'AI Chat', to: '/ai-chat' },
-      { label: 'Live Map', to: '/live-map' },
-      { label: 'Analytics', to: '/analytics' },
-      { label: 'Profile', to: '/profile' },
-    ],
-  },
-  {
-    title: 'Operations',
-    links: [
-      { label: 'Camera Monitoring', to: '/cameras' },
-      { label: 'AI Route Guidance', to: '/ai-chat' },
-      { label: 'Map & Markers', to: '/live-map' },
-      { label: 'Profile Settings', to: '/profile' },
-    ],
-  },
-  {
-    title: 'Access',
-    links: [
-      { label: 'Cameras', to: '/cameras' },
-      { label: 'AI Chat', to: '/ai-chat' },
-      { label: 'Live Map', to: '/live-map' },
-      { label: 'Sign In', to: '/login' },
-      { label: 'Create Account', to: '/signup' },
-    ],
-  },
+const footerLinks = [
+  { label: 'Cameras', to: '/cameras' },
+  { label: 'AI Chat', to: '/ai-chat' },
+  { label: 'Live Map', to: '/live-map' },
+  { label: 'Analytics', to: '/analytics' },
+  { label: 'About', to: '/about' },
 ];
 
 const socialLinks = [
@@ -46,47 +22,35 @@ const SiteFooter = () => {
   const dark = theme === 'dark';
 
   return (
-    <footer className={`border-t py-16 ${dark ? 'border-navy-600/15 bg-navy-950' : 'border-gray-200 bg-paper-50'}`}>
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="mb-16 grid gap-12 md:grid-cols-4">
-          <div className="md:col-span-1">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-tblue-500/20">
-                <img src="/logo.PNG" alt="SEMAFORI Logo" className="h-5 w-5 object-contain" />
-              </div>
-              <div>
-                <span className={`font-serif text-sm font-semibold ${dark ? 'text-white' : 'text-navy-800'}`}>SEMAFORI</span>
-                <span className={`block text-[9px] uppercase tracking-[0.2em] ${dark ? 'text-tblue-300/60' : 'text-tblue-600/60'}`}>Smart Traffic</span>
-              </div>
-            </div>
-            <p className={`text-xs leading-relaxed ${dark ? 'text-gray-500' : 'text-gray-400'}`} style={{ lineHeight: '1.8' }}>
-              Harmonizing urban movement through artificial intelligence and better real-time coordination.
-            </p>
+    <footer className={`border-t ${dark ? 'border-navy-600/15 bg-navy-950' : 'border-gray-200 bg-paper-50'}`}>
+      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-6 py-5 sm:flex-row">
+        {/* Brand */}
+        <Link to="/cameras" className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-tblue-500/20">
+            <img src="/logo.PNG" alt="SEMAFORI Logo" className="h-4 w-4 object-contain" />
           </div>
+          <span className={`font-serif text-xs font-semibold ${dark ? 'text-white' : 'text-navy-800'}`}>SEMAFORI</span>
+        </Link>
 
-          {footerColumns.map((column) => (
-            <div key={column.title}>
-              <h4 className={`mb-4 text-xs font-semibold uppercase tracking-wider ${dark ? 'text-gray-300' : 'text-gray-600'}`}>{column.title}</h4>
-              <ul className="space-y-2.5">
-                {column.links.map((link) => (
-                  <li key={`${column.title}-${link.label}`}>
-                    <Link to={link.to} className={`text-xs transition-colors hover:text-tblue-400 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
+        {/* Essential links only */}
+        <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5">
+          {footerLinks.map((link) => (
+            <Link
+              key={link.to}
+              to={link.to}
+              className={`text-[11px] transition-colors hover:text-tblue-400 ${dark ? 'text-gray-500' : 'text-gray-400'}`}
+            >
+              {link.label}
+            </Link>
           ))}
-        </div>
+        </nav>
 
-        <div className="eastern-line mb-8 w-full"></div>
-
-        <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-          <p className={`text-[11px] ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
-            &copy; 2026 SEMAFORI. All rights reserved. Norit Qyqalla
+        {/* Copyright + socials */}
+        <div className="flex items-center gap-3">
+          <p className={`text-[10px] ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
+            &copy; 2026 SEMAFORI · Norit Qyqalla
           </p>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1">
             {socialLinks.map(({ icon, href, label }) => (
               <a
                 key={icon}
@@ -94,9 +58,9 @@ const SiteFooter = () => {
                 target="_blank"
                 rel="noreferrer"
                 aria-label={label}
-                className={`rounded-lg p-2 transition-colors ${dark ? 'text-gray-600 hover:bg-navy-800/40 hover:text-tblue-400' : 'text-gray-400 hover:bg-gray-100 hover:text-tblue-500'}`}
+                className={`rounded-md p-1.5 transition-colors ${dark ? 'text-gray-600 hover:bg-navy-800/40 hover:text-tblue-400' : 'text-gray-400 hover:bg-gray-100 hover:text-tblue-500'}`}
               >
-                <iconify-icon icon={icon} width="16"></iconify-icon>
+                <iconify-icon icon={icon} width="14"></iconify-icon>
               </a>
             ))}
           </div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
+import { useTheme } from '../context/ThemeContext';
 import { getLoadColor, getLoadLabel } from '../shared/trafficData';
 import { VALIDATION_RESULTS } from '../shared/validationResults';
 import {
@@ -91,6 +92,14 @@ function LiveCard({ load }) {
 }
 
 const TrafficAnalytics = () => {
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
+  // Charts adapt to the active theme.
+  const gridColor = dark ? '#27272a' : '#e4e4e7';
+  const tooltipStyle = dark
+    ? TOOLTIP_STYLE
+    : { background: '#ffffff', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 12 };
+  const cursorFill = dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)';
   const [range, setRange] = useState(3);
   const [counts, setCounts] = useState([]);
   const [loads, setLoads] = useState([]);
@@ -329,20 +338,20 @@ const TrafficAnalytics = () => {
   });
 
   return (
-    <div style={{ background: '#09090b', minHeight: '100vh', color: '#fff' }}>
+    <div className="theme-cockpit" style={{ background: 'var(--app-bg)', minHeight: '100vh', color: 'var(--app-fg)' }}>
       <style>{`
-        .glass-card { background: rgba(255,255,255,0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
-        .glass-card:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
-        .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: #71717a; }
-        .stat-value { font-size: 22px; font-weight: 600; color: #fff; line-height: 1.2; }
-        .progress-track { background: rgba(255,255,255,0.06); border-radius: 9999px; overflow: hidden; height: 4px; }
+        .glass-card { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--card-border); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
+        .glass-card:hover { background: var(--card-bg-hover); border-color: var(--card-border-hover); }
+        .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+        .stat-value { font-size: 22px; font-weight: 600; color: var(--text-strong); line-height: 1.2; }
+        .progress-track { background: var(--track-bg); border-radius: 9999px; overflow: hidden; height: 4px; }
         .progress-fill { height: 100%; border-radius: 9999px; transition: width 1s cubic-bezier(0.16,1,0.3,1); }
-        .range-pill { padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 600; color: #71717a; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); cursor: pointer; transition: all 0.2s ease; }
-        .range-pill:hover { color: #a1a1aa; background: rgba(255,255,255,0.05); }
+        .range-pill { padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 600; color: var(--text-dim); border: 1px solid var(--card-border); background: var(--chip-bg); cursor: pointer; transition: all 0.2s ease; }
+        .range-pill:hover { color: var(--text-strong); background: var(--card-bg-hover); }
         .range-pill.active { background: rgba(249,115,22,0.12); border-color: rgba(249,115,22,0.35); color: #fb923c; }
-        .cam-pill { padding: 4px 10px; border-radius: 9999px; font-size: 10px; font-weight: 600; color: #71717a; border: 1px solid rgba(255,255,255,0.08); background: transparent; cursor: pointer; transition: all 0.2s ease; }
-        .cam-pill:hover { color: #d4d4d8; }
-        .cam-pill.active { background: rgba(255,255,255,0.08); color: #fff; border-color: rgba(255,255,255,0.2); }
+        .cam-pill { padding: 4px 10px; border-radius: 9999px; font-size: 10px; font-weight: 600; color: var(--text-dim); border: 1px solid var(--card-border); background: transparent; cursor: pointer; transition: all 0.2s ease; }
+        .cam-pill:hover { color: var(--text-strong); }
+        .cam-pill.active { background: var(--track-bg); color: var(--text-strong); border-color: var(--card-border-hover); }
         .bg-glow { position: fixed; border-radius: 9999px; filter: blur(120px); opacity: 0.05; pointer-events: none; z-index: -10; }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
         .anim { animation: fadeInUp 0.7s cubic-bezier(0.16,1,0.3,1) forwards; }
@@ -414,10 +423,10 @@ const TrafficAnalytics = () => {
               ) : (
                 <ResponsiveContainer width="100%" height={280}>
                   <LineChart data={hourlySeries} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                    <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fill: '#71717a', fontSize: 10 }} minTickGap={40} tickLine={false} axisLine={{ stroke: '#27272a' }} />
+                    <CartesianGrid stroke={gridColor} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: '#71717a', fontSize: 10 }} minTickGap={40} tickLine={false} axisLine={{ stroke: gridColor }} />
                     <YAxis tick={{ fill: '#71717a', fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: '#a1a1aa' }} />
+                    <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: '#a1a1aa' }} />
                     {(chartCamera === 'all' ? CAMERAS : CAMERAS.filter((c) => c.id === chartCamera)).map((cam) => (
                       <Line
                         key={cam.id}
@@ -456,10 +465,10 @@ const TrafficAnalytics = () => {
               ) : (
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={profileData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                    <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="hour" tick={{ fill: '#71717a', fontSize: 9 }} interval={2} tickLine={false} axisLine={{ stroke: '#27272a' }} />
+                    <CartesianGrid stroke={gridColor} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="hour" tick={{ fill: '#71717a', fontSize: 9 }} interval={2} tickLine={false} axisLine={{ stroke: gridColor }} />
                     <YAxis tick={{ fill: '#71717a', fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: '#a1a1aa' }} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                    <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: '#a1a1aa' }} cursor={{ fill: cursorFill }} />
                     <Bar dataKey="avg" name="Avg vehicles" radius={[3, 3, 0, 0]}>
                       {profileData.map((entry) => (
                         <Cell
@@ -536,10 +545,10 @@ const TrafficAnalytics = () => {
               ) : (
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={typeMix} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                    <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="camera" tick={{ fill: '#71717a', fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#27272a' }} />
+                    <CartesianGrid stroke={gridColor} strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="camera" tick={{ fill: '#71717a', fontSize: 9 }} tickLine={false} axisLine={{ stroke: gridColor }} />
                     <YAxis tick={{ fill: '#71717a', fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: '#a1a1aa' }} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                    <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: '#a1a1aa' }} cursor={{ fill: cursorFill }} />
                     <Legend wrapperStyle={{ fontSize: 10, color: '#a1a1aa' }} />
                     {[...TYPE_KEYS, 'other'].map((key) => (
                       <Bar key={key} dataKey={key} name={key.charAt(0).toUpperCase() + key.slice(1)} stackId="mix" fill={TYPE_COLORS[key]} />
