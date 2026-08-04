@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../services/supabaseClient';
@@ -81,7 +81,7 @@ const Profile = () => {
           activeReports: rows.filter(r => r.status === 'active').length,
           resolvedReports: rows.filter(r => r.status === 'cleared').length,
         });
-      } catch {}
+      } catch { /* stats stay at zero on error */ }
     };
     load();
   }, [user]);
@@ -164,9 +164,6 @@ const Profile = () => {
 
   const isGuest = !user;
   const name = profileData.full_name || 'Traffic Operator';
-  const parts = name.split(' ');
-  const firstName = parts[0] || '';
-  const lastName = parts.slice(1).join(' ') || '';
 
   return (
     <div style={{ background: '#09090b', minHeight: '100vh', color: '#fff' }}>

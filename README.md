@@ -219,9 +219,11 @@ SEMAFORI/
 │   │   ├── Login.jsx               # Faqja e hyrjes
 │   │   ├── Signup.jsx              # Faqja e regjistrimit
 │   │   ├── Profile.jsx             # Profili i përdoruesit
-│   │   ├── Dashboard.jsx           # (e ridrejtuar te TrafficCommandCenter)
-│   │   ├── TrafficCommandCenter.jsx # Komanda qendrore e trafikut (live)
-│   │   └── TrafficAnalytics.jsx    # Analytics & grafikët e trafikut
+│   │   ├── CamerasPage.jsx         # Qendra e kamerave (live, 100% real)
+│   │   ├── AIChatPage.jsx          # Asistenti AI me të dhëna live
+│   │   ├── LiveMapPage.jsx         # Google Maps + traffic layer
+│   │   └── TrafficAnalytics.jsx    # Analitika (rush hour, anomali, CSV)
+│   ├── legacy/                     # Skedarë të vjetër (jashtë aplikacionit)
 │   └── services/
 │       ├── supabaseClient.js       # Supabase JS client
 │       ├── groqService.js          # Groq AI API client
@@ -240,32 +242,32 @@ SEMAFORI/
 
 ## Faqet kryesore
 
-### 1. TrafficCommandCenter (`/dashboard`)
+Route-t e aplikacionit (`src/App.jsx`):
 
-Faqja kryesore e operatorit të trafikut.  Përmban:
+| Route | Faqja | Përshkrimi |
+| ----- | ----- | ---------- |
+| `/` | — | Ridrejtim te `/cameras` |
+| `/login` | `Login` | Hyrja me Supabase Auth |
+| `/signup` | `Signup` | Regjistrimi i llogarisë |
+| `/cameras` | `CamerasPage` | Qendra e kamerave: 4 stream-e live Gjirafa, snapshot-et e anotuara nga pipeline-i, badge-a LIVE/STALE, dhe metrika 100% reale nga Supabase (asgjë e simuluar) |
+| `/ai-chat` | `AIChatPage` | Asistenti Groq që përgjigjet me numrat realë të kamerave live + vlerësim rrugësh (Nominatim + OSRM/Google) me linqe për Google Maps / Waze / Apple Maps |
+| `/live-map` | `LiveMapPage` | Google Maps (dark, Road/Satellite/Hybrid) me shtresën reale Google Traffic, markerë kamerash me ngjyra sipas ngarkesës dhe markerë raportesh të përdoruesit |
+| `/analytics` | `TrafficAnalytics` | Analitika e plotë: profili i orës së ditës (rush hour), krahasimi i kamerave, përzierja e llojeve të automjeteve, shpërndarja e ngarkesave, pikat, anomalitë (2σ), mbulimi i të dhënave, eksport CSV |
+| `/profile` | `Profile` | Profili i përdoruesit, avatar, statistikat e raporteve |
 
-- **Video monitoring** — katër kamera live nga Gjirafa Slow TV me overlay
-  që tregon nivelin e ngarkesës (low/medium/high/congested) dhe numrin e
-  automjeteve për cikël.
-- **Snapshot grid** — katër pamje të fundit të anotuara nga pipeline i
-  detektimit, të përditësuara çdo 30 sekonda.
-- **AI chat assistant** — Groq Llama 3.1 8B që mund të:
-  - Vlerësojë rrugën midis dy vendeve (p.sh. "from Prishtine to Ferizaj")
-  - Këshillojë për pikat e kongjestionit
-  - Krijimi i linqeve për Google Maps, Waze, dhe Apple Maps
-- **Harta interaktive Leaflet** — markerë me ngjyrë për nivelin e trafikut,
-  aftësia për të krijuar markerë të rinj që ruhen në Supabase.
+Skedarët e vjetër të pa-përdorur gjenden në `src/legacy/` (jashtë aplikacionit, të ruajtur për referencë).
 
-### 2. TrafficAnalytics (`/traffic-analytics`)
+### Pipeline-i i detektimit (tracked mode)
 
-Faqja e analitikës së trafikut.  Përmban:
-
-- **Katër karta live** — secila kamerë me numrin aktual të automjeteve,
-  nivelin e ngarkesës, dhe rolling rate.
-- **Grafikët Recharts** — historiku i numërimit të automjeteve për
-  1, 3, 7, ose 14 ditë, me mundësi për të zgjedh kamerën.
-- **Shpjegimi i metodës** — karta që shpjegojnë klasifikimin me
-  percentile, ruajtjen në Supabase, dhe sinkronizimin me hartën.
+Shërbimi Python (`semafori-vision/scheduler.py`) përdor `PIPELINE_MODE=tracked`
+(default): për çdo kamerë, çdo 5 minuta, kap një burim prej 32 frame-ash
+(8 s × 4 fps), ekzekuton YOLOv8n-ONNX mbi çdo frame, i gjurmon automjetet me
+ByteTrack dhe numëron kalimet e vijës me LineZone.  Çdo rresht në
+`traffic_counts` përmban `vehicle_count` (automjetet e dukshme — mediana e
+burimit), `in_count` / `out_count` (kalimet e vijës sipas drejtimit),
+`vehicle_type_breakdown` (JSONB) dhe `avg_confidence`.  Nëse kapja e burimit
+dështon, kamera bie automatikisht në modalitetin single-frame për atë cikël
+pa ndikuar kamerat e tjera.
 
 ## Nisja lokale
 

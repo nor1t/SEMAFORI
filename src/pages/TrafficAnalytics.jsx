@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { getLoadColor, getLoadLabel } from '../shared/trafficData';
+import { VALIDATION_RESULTS } from '../shared/validationResults';
 import {
   LineChart,
   Line,
@@ -684,6 +685,32 @@ const TrafficAnalytics = () => {
               </div>
             </SectionCard>
           </div>
+
+          {/* Model quality — shown only after validationResults.js is filled */}
+          {VALIDATION_RESULTS.countF1 != null && (
+            <div className="mt-5">
+              <SectionCard
+                icon="lucide:badge-check"
+                title="Model quality"
+                subtitle={`Measured with validate_counts.py + benchmark_detectors.py · ${VALIDATION_RESULTS.measuredAt || 'date not set'}`}
+              >
+                <div className="flex flex-wrap gap-2.5">
+                  {[
+                    { label: 'Model', val: VALIDATION_RESULTS.model },
+                    { label: 'Count F1', val: VALIDATION_RESULTS.countF1 != null ? VALIDATION_RESULTS.countF1.toFixed(2) : '—' },
+                    { label: 'Precision', val: VALIDATION_RESULTS.countPrecision != null ? VALIDATION_RESULTS.countPrecision.toFixed(2) : '—' },
+                    { label: 'Recall', val: VALIDATION_RESULTS.countRecall != null ? VALIDATION_RESULTS.countRecall.toFixed(2) : '—' },
+                    { label: `vs ${VALIDATION_RESULTS.comparedWith}`, val: VALIDATION_RESULTS.speedup != null ? `${VALIDATION_RESULTS.speedup}× faster` : '—' },
+                  ].map((chip) => (
+                    <div key={chip.label} className="rounded-lg px-3.5 py-2.5 bg-white/[0.03] border border-white/[0.06]">
+                      <div className="stat-label">{chip.label}</div>
+                      <div className="text-[13px] font-semibold text-zinc-100 mt-0.5">{chip.val}</div>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+            </div>
+          )}
 
         </div>
       </main>
