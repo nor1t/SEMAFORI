@@ -36,9 +36,9 @@ const FEATURES = [
 const TECH_STACK = ['React 19', 'Vite', 'Tailwind CSS', 'Supabase', 'Python', 'YOLOv8n (ONNX)', 'ByteTrack', 'Groq LLM', 'Google Maps API', 'Render', 'Vercel'];
 
 const AboutPage = () => (
-  <div className="theme-cockpit" style={{ background: 'var(--app-bg)', minHeight: '100vh', color: 'var(--app-fg)' }}>
+  <div className="theme-cockpit" style={{ minHeight: '100vh', color: 'var(--app-fg)' }}>
     <style>{`
-      .glass-card { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--card-border); transition: all 0.3s ease; }
+      .glass-card { background: var(--card-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--card-border); transition: all 0.3s ease; box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset; }
       .glass-card:hover { background: var(--card-bg-hover); border-color: var(--card-border-hover); }
       .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
       @keyframes fadeInUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
@@ -115,7 +115,7 @@ const AboutPage = () => (
         <div className="glass-card rounded-2xl p-6 text-center">
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-dim)' }}>
             Designed and built by <span className="font-semibold" style={{ color: 'var(--text-strong)' }}>Norit Qyqalla</span> as
-            a thesis project for Advanced Programming (Semester 6). The detection pipeline runs 24/7 on Render;
+            a thesis project for Software Engineering. The detection pipeline runs 24/7 on Render;
             the dashboard is deployed on Vercel; all traffic data lives in Supabase.
           </p>
         </div>

@@ -156,7 +156,7 @@ const Profile = () => {
 
   if (authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center theme-cockpit" style={{ background: 'var(--app-bg)' }}>
+      <div className="flex min-h-screen items-center justify-center theme-cockpit" style={{ color: 'var(--app-fg)' }}>
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
       </div>
     );
@@ -166,7 +166,7 @@ const Profile = () => {
   const name = profileData.full_name || 'Traffic Operator';
 
   return (
-    <div className="theme-cockpit" style={{ background: 'var(--app-bg)', minHeight: '100vh', color: 'var(--app-fg)' }}>
+    <div className="theme-cockpit" style={{ minHeight: '100vh', color: 'var(--app-fg)' }}>
       <style>{`
         @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
         .anim { animation: fadeUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards; }

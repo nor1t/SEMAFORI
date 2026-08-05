@@ -10,15 +10,39 @@
   }
 
   body {
-    @apply transition-colors duration-300;
+    @apply transition-colors duration-500;
   }
 
+  /* ── Dark mode — deep slate with layered gradients + subtle indigo/violet glow ── */
   body.dark {
-    @apply bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100;
+    background:
+      /* Subtle grid pattern */
+      linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px),
+      /* Faint top-right indigo glow */
+      radial-gradient(ellipse 70% 60% at 80% 0%, rgba(99, 102, 241, 0.07), transparent 60%),
+      /* Subtle bottom-left violet accent */
+      radial-gradient(ellipse 50% 40% at 20% 100%, rgba(79, 70, 229, 0.04), transparent 60%),
+      /* Core deep charcoal gradient */
+      linear-gradient(175deg, #0b0b14 0%, #10101c 30%, #0e0e18 60%, #0a0a12 100%);
+    background-size: 60px 60px, 60px 60px, 100% 100%, 100% 100%, 100% 100%;
+    @apply text-gray-100;
   }
 
+  /* ── Light mode — warm off-white with soft blue glow ── */
   body:not(.dark) {
-    @apply bg-gradient-to-br from-blue-50 via-white to-blue-50 text-gray-900;
+    background:
+      /* Subtle grid pattern */
+      linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px),
+      /* Faint top-right indigo glow */
+      radial-gradient(ellipse 60% 50% at 80% 0%, rgba(99, 102, 241, 0.04), transparent 60%),
+      /* Subtle bottom-left warm accent */
+      radial-gradient(ellipse 40% 30% at 20% 100%, rgba(59, 130, 246, 0.03), transparent 60%),
+      /* Core warm white gradient */
+      linear-gradient(175deg, #fcfcfb 0%, #f7f6f2 30%, #fafaf8 60%, #f5f4f0 100%);
+    background-size: 60px 60px, 60px 60px, 100% 100%, 100% 100%, 100% 100%;
+    @apply text-gray-900;
   }
 
   * { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
@@ -99,13 +123,14 @@
 }
 
 /* ── Theme system: shared variables (light = :root, dark = .dark) ─────── */
+/* ── Theme system: shared variables (light = :root, dark = .dark) ─────── */
 :root {
   --app-bg: #f4f4f5;
   --app-fg: #18181b;
-  --card-bg: rgba(0, 0, 0, 0.03);
-  --card-border: rgba(0, 0, 0, 0.08);
-  --card-bg-hover: rgba(0, 0, 0, 0.05);
-  --card-border-hover: rgba(0, 0, 0, 0.16);
+  --card-bg: rgba(255, 255, 255, 0.65);
+  --card-border: rgba(0, 0, 0, 0.06);
+  --card-bg-hover: rgba(255, 255, 255, 0.85);
+  --card-border-hover: rgba(0, 0, 0, 0.12);
   --text-dim: #71717a;
   --text-strong: #18181b;
   --track-bg: rgba(0, 0, 0, 0.08);
@@ -118,12 +143,12 @@
 }
 
 .dark {
-  --app-bg: #09090b;
+  --app-bg: #0c0c14;
   --app-fg: #ffffff;
-  --card-bg: rgba(255, 255, 255, 0.03);
-  --card-border: rgba(255, 255, 255, 0.08);
+  --card-bg: rgba(255, 255, 255, 0.025);
+  --card-border: rgba(255, 255, 255, 0.06);
   --card-bg-hover: rgba(255, 255, 255, 0.05);
-  --card-border-hover: rgba(255, 255, 255, 0.15);
+  --card-border-hover: rgba(255, 255, 255, 0.12);
   --text-dim: #71717a;
   --text-strong: #ffffff;
   --track-bg: rgba(255, 255, 255, 0.06);

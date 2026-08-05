@@ -338,9 +338,9 @@ const TrafficAnalytics = () => {
   });
 
   return (
-    <div className="theme-cockpit" style={{ background: 'var(--app-bg)', minHeight: '100vh', color: 'var(--app-fg)' }}>
+    <div className="theme-cockpit" style={{ minHeight: '100vh', color: 'var(--app-fg)' }}>
       <style>{`
-        .glass-card { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--card-border); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
+        .glass-card { background: var(--card-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--card-border); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset; }
         .glass-card:hover { background: var(--card-bg-hover); border-color: var(--card-border-hover); }
         .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
         .stat-value { font-size: 22px; font-weight: 600; color: var(--text-strong); line-height: 1.2; }

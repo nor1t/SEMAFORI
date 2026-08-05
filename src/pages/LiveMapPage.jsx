@@ -15,7 +15,7 @@ import {
   getLoadLabel,
 } from '../shared/trafficData';
 import SiteHeader from '../components/SiteHeader';
-import SiteFooter from '../components/SiteFooter';
+import { createPortal } from 'react-dom';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
@@ -114,6 +114,7 @@ const LiveMapPage = () => {
   const [mapPickMode, setMapPickMode] = useState(false);
   const [mapType, setMapType] = useState('roadmap');
   const [showTraffic, setShowTraffic] = useState(true);
+  const [mapFullscreen, setMapFullscreen] = useState(false);
 
   /* ── Load persisted user markers + reports (real data) ── */
   useEffect(() => {
@@ -241,7 +242,7 @@ const LiveMapPage = () => {
   };
 
   return (
-    <div className="theme-cockpit" style={{ background: 'var(--app-bg)', minHeight: '100vh', color: 'var(--app-fg)' }}>
+    <div className="theme-cockpit min-h-screen lg:h-screen lg:flex lg:flex-col" style={{ color: 'var(--app-fg)' }}>
       <style>{`
         .glass-panel { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--card-border); }
         .glass-card { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--card-border); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
@@ -272,10 +273,10 @@ const LiveMapPage = () => {
 
       <SiteHeader />
 
-      <main className="pt-14 h-screen flex">
-
-        {/* ══════════ Map Area (Google Maps) ══════════ */}
-        <div className="flex-1 relative anim d1">
+      <main className="pt-16 lg:pt-16 flex-1 flex flex-col lg:flex-row p-2 lg:p-3 gap-2 lg:gap-3">
+        {/* ══════════ Map ══════════ */}
+        <div className={`${mapFullscreen ? '!fixed !inset-0 !z-[200] !rounded-none' : 'h-[45vh] lg:h-auto lg:flex-[0.7] rounded-xl'} relative overflow-hidden shadow-2xl shadow-black/40 anim d1`}>
+          <div className="absolute inset-0">
           {!GOOGLE_MAPS_API_KEY ? (
             <div className="h-full flex flex-col items-center justify-center text-center px-6">
               <iconify-icon icon="lucide:map-pin-off" width="28" className="text-zinc-600" />
@@ -379,19 +380,28 @@ const LiveMapPage = () => {
                 <iconify-icon icon="lucide:traffic-cone" width="11" />
                 Traffic
               </button>
+              <div className="w-px bg-zinc-700/50 mx-0.5" />
+              <button
+                onClick={() => setMapFullscreen((v) => !v)}
+                className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all flex items-center gap-1 ${mapFullscreen ? 'bg-indigo-500/15 text-indigo-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                title={mapFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
+              >
+                <iconify-icon icon={mapFullscreen ? 'lucide:minimize-2' : 'lucide:maximize-2'} width="12" />
+                <span className="hidden sm:inline">{mapFullscreen ? 'Exit' : 'Full'}</span>
+              </button>
             </div>
           )}
 
           {/* Coordinates readout */}
           {coords && (
-            <div className="absolute bottom-5 right-[380px] z-[500] glass-panel rounded-lg px-3 py-1.5">
+            <div className="hidden lg:block absolute bottom-5 right-[380px] z-[500] glass-panel rounded-lg px-3 py-1.5">
               <span className="text-[10px] font-mono text-zinc-500">{coords}</span>
             </div>
           )}
 
-          {/* Legend */}
-          <div className="absolute bottom-5 left-5 z-[500] glass-panel rounded-xl p-3.5" style={{ minWidth: 170 }}>
-            <div className="text-[9px] font-semibold uppercase tracking-widest text-zinc-500 mb-2.5">Camera Load</div>
+          {/* Legend — compact on mobile */}
+          <div className="absolute bottom-2 left-2 lg:bottom-5 lg:left-5 z-[500] glass-panel rounded-lg lg:rounded-xl p-2 lg:p-3.5 scale-75 lg:scale-100 origin-bottom-left" style={{ minWidth: 140 }}>
+            <div className="text-[7px] lg:text-[9px] font-semibold uppercase tracking-widest text-zinc-500 mb-1.5 lg:mb-2.5">Camera Load</div>
             {[
               { label: 'Low', color: getLoadColor('low') },
               { label: 'Medium', color: getLoadColor('medium') },
@@ -423,10 +433,12 @@ const LiveMapPage = () => {
               </>
             )}
           </div>
+          </div>
         </div>
 
         {/* ══════════ Right Panel ══════════ */}
-        <div className="w-[360px] xl:w-[380px] border-l border-zinc-800/50 flex flex-col h-full" style={{ background: 'var(--app-bg)' }}>
+        {!mapFullscreen && (
+        <div className="lg:flex-[0.3] rounded-xl overflow-hidden border border-white/[0.06] shadow-2xl shadow-black/30 flex flex-col max-h-[40vh] lg:max-h-none" style={{ background: 'var(--app-bg)' }}>
           {/* Panel Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/50 flex-shrink-0">
             <div className="flex items-center gap-2">
@@ -661,9 +673,8 @@ const LiveMapPage = () => {
             </div>
           </div>
         </div>
+        )}
       </main>
-
-      <SiteFooter />
     </div>
   );
 };

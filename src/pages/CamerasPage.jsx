@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { CAMERA_FEEDS, CAMERA_LOCATIONS, getLoadColor } from '../shared/trafficData';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { CAMERA_FEEDS, CAMERA_LOCATIONS, getLoadColor, getLoadLabel } from '../shared/trafficData';
 import { snapshotUrl } from '../shared/snapshots';
 import usePipelineHealth from '../hooks/usePipelineHealth';
 import useTrafficData from '../hooks/useTrafficData';
 import LiveChat from '../components/LiveChat';
 import SiteHeader from '../components/SiteHeader';
-import SiteFooter from '../components/SiteFooter';
 
 /* ── Pipeline status badge: LIVE / STALE Xm / OFFLINE ── */
 function pipelineBadge(camId, health, online, nowMs) {
@@ -22,21 +22,16 @@ function ThroughputChart({ today, yesterday }) {
   const max = Math.max(1, ...today, ...yesterday);
   const pct = (v) => Math.max(2, (v / max) * 100);
   return (
-    <div className="flex items-end gap-[6px] h-24">
+    <div className="flex items-end gap-[4px] h-16">
       {today.map((v, i) => (
         <div key={i} className="flex-1 relative h-full">
           <div
             className="absolute bottom-0 w-full rounded-sm"
             style={{ height: pct(yesterday[i]) + '%', background: 'rgba(255,255,255,0.05)' }}
-            title={`Yesterday ${i}:00 — ${yesterday[i]} vehicles`}
           />
           <div
             className="absolute bottom-0 w-full rounded-sm"
-            style={{
-              height: pct(v) + '%',
-              background: v >= max * 0.8 ? 'rgba(249,115,22,0.65)' : 'rgba(249,115,22,0.3)',
-            }}
-            title={`Today ${i}:00 — ${v} vehicles`}
+            style={{ height: pct(v) + '%', background: v >= max * 0.8 ? 'rgba(249,115,22,0.65)' : 'rgba(249,115,22,0.3)' }}
           />
         </div>
       ))}
@@ -46,6 +41,118 @@ function ThroughputChart({ today, yesterday }) {
 
 const prettyCamName = (slug) =>
   (slug || '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+/* ── Left vertical banner: per-camera live traffic with ticker animation ── */
+function LeftTrafficBanner({ loads }) {
+  const navigate = useNavigate();
+  const total = loads.reduce((s, l) => s + (Number(l.vehicle_count) || 0), 0);
+  const items = loads.length ? loads : [{ camera_id: '--', camera_name: 'no-data', vehicle_count: 0, rolling_rate: 0, load_level: 'low' }];
+
+  return (
+    <aside
+      onClick={() => navigate('/analytics')}
+      className="w-[72px] flex-shrink-0 border-r border-white/[0.06] hidden lg:flex flex-col items-center bg-white/[0.01] cursor-pointer hover:bg-white/[0.03] transition-colors group overflow-hidden select-none"
+      title="View Analytics →"
+    >
+      <div className="flex flex-col items-center gap-0.5 pt-3 pb-1.5 flex-shrink-0">
+        <span className="text-[7px] font-semibold uppercase tracking-[0.18em] text-white/25 group-hover:text-white/40 transition-colors" style={{ writingMode: 'vertical-rl' }}>TRAFFIC</span>
+        <span className="text-[7px] font-semibold uppercase tracking-[0.18em] text-orange-400/50 group-hover:text-orange-400/80 transition-colors" style={{ writingMode: 'vertical-rl' }}>MONITOR</span>
+      </div>
+      <div className="flex-1 w-full overflow-hidden relative px-1">
+        <div className="flex flex-col gap-1 animate-ticker-down">
+          {[...items, ...items].map((l, i) => {
+            const level = l.load_level || 'low';
+            const color = getLoadColor(level);
+            const rate = Number(l.rolling_rate) || 0;
+            const short = (l.camera_name || '').replace(/-/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase()).join('');
+            return (
+              <div key={`${l.camera_id}-${i}`} className="flex flex-col items-center gap-0.5 py-1.5 rounded-[4px] bg-white/[0.02] hover:bg-white/[0.06] transition-colors min-h-[44px] justify-center">
+                <div className="relative">
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                  {level === 'high' && <div className="absolute inset-0 rounded-full animate-ping opacity-60" style={{ backgroundColor: color }} />}
+                </div>
+                <span className="text-[9px] font-semibold tabular-nums text-white/80 leading-none">{Number(l.vehicle_count) || 0}</span>
+                <span className="text-[7px] text-white/30 leading-none tabular-nums">{rate}/c</span>
+                <span className="text-[6px] text-white/20 leading-none truncate max-w-full">{short}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="text-center py-2 border-t border-white/[0.06] flex-shrink-0 w-full">
+        <div className="text-[13px] font-bold tabular-nums text-white/90 leading-none">{total}</div>
+        <div className="text-[7px] uppercase tracking-widest text-white/30 leading-none mt-0.5">Total</div>
+      </div>
+    </aside>
+  );
+}
+
+/* ── Right vertical banner: network-wide stats with ticker animation ── */
+function RightTrafficBanner({ loads, peaks, peakTimeLabel, peakCamLabel }) {
+  const navigate = useNavigate();
+  const total = loads.reduce((s, l) => s + (Number(l.vehicle_count) || 0), 0);
+  const avgRate = loads.length
+    ? Math.round(loads.reduce((s, l) => s + (Number(l.rolling_rate) || 0), 0) / loads.length)
+    : 0;
+  const busiest = useMemo(() =>
+    loads.length ? [...loads].sort((a, b) => (Number(b.vehicle_count) || 0) - (Number(a.vehicle_count) || 0))[0] : null,
+  [loads]);
+  const loadLevels = loads.map(l => l.load_level || 'low');
+  const highCount = loadLevels.filter(l => l === 'high' || l === 'congested').length;
+
+  return (
+    <aside
+      onClick={() => navigate('/analytics')}
+      className="w-[72px] flex-shrink-0 border-l border-white/[0.06] hidden lg:flex flex-col items-center bg-white/[0.01] cursor-pointer hover:bg-white/[0.03] transition-colors group overflow-hidden select-none"
+      title="View Analytics →"
+    >
+      <div className="flex flex-col items-center gap-0.5 pt-3 pb-1.5 flex-shrink-0">
+        <span className="text-[7px] font-semibold uppercase tracking-[0.18em] text-white/25 group-hover:text-white/40 transition-colors" style={{ writingMode: 'vertical-rl' }}>NETWORK</span>
+        <span className="text-[7px] font-semibold uppercase tracking-[0.18em] text-cyan-400/50 group-hover:text-cyan-400/80 transition-colors" style={{ writingMode: 'vertical-rl' }}>PULSE</span>
+      </div>
+      <div className="flex-1 w-full overflow-hidden relative px-1">
+        <div className="flex flex-col gap-1.5 animate-ticker-down">
+          {[1, 2].map(rep => (
+            <React.Fragment key={rep}>
+              <div className="text-center py-1.5 rounded-[4px] bg-white/[0.02] hover:bg-white/[0.06] transition-colors">
+                <div className="text-[13px] font-bold tabular-nums text-white/90 leading-none">{total}</div>
+                <div className="text-[7px] uppercase tracking-widest text-white/25 leading-none mt-0.5">Vehicles</div>
+              </div>
+              <div className="text-center py-1.5 rounded-[4px] bg-white/[0.02] hover:bg-white/[0.06] transition-colors">
+                <div className="text-[11px] font-semibold tabular-nums text-red-400/80 leading-none">{highCount}</div>
+                <div className="text-[7px] uppercase tracking-widest text-white/25 leading-none mt-0.5">Hotspots</div>
+              </div>
+              <div className="text-center py-1.5 rounded-[4px] bg-white/[0.02] hover:bg-white/[0.06] transition-colors">
+                <div className="text-[12px] font-semibold tabular-nums text-cyan-400/80 leading-none">{avgRate}</div>
+                <div className="text-[7px] uppercase tracking-widest text-white/25 leading-none mt-0.5">Rate/cyc</div>
+              </div>
+              <div className="text-center py-1.5 rounded-[4px] bg-white/[0.02] hover:bg-white/[0.06] transition-colors">
+                <div className="text-[12px] font-semibold tabular-nums text-orange-400/80 leading-none">{peaks ? peaks.count : '—'}</div>
+                <div className="text-[7px] uppercase tracking-widest text-white/25 leading-none mt-0.5">Peak 24h</div>
+              </div>
+              {peaks && (
+                <div className="text-center py-1 rounded-[4px] bg-white/[0.02]">
+                  <div className="text-[7px] text-white/30 leading-tight">{peakTimeLabel}</div>
+                  <div className="text-[6px] text-white/20 leading-none truncate">{peakCamLabel}</div>
+                </div>
+              )}
+              {busiest && (
+                <div className="text-center py-1 rounded-[4px] bg-white/[0.02]">
+                  <div className="text-[7px] font-mono text-white/50 leading-tight truncate">{prettyCamName(busiest.camera_name)}</div>
+                  <div className="text-[6px] uppercase tracking-widest text-white/25 leading-none mt-0.5">Busiest</div>
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+      <div className="text-center py-2 border-t border-white/[0.06] flex-shrink-0 w-full">
+        <div className="text-[7px] font-mono text-white/30 leading-none group-hover:text-white/50 transition-colors">24h</div>
+        <div className="w-4 h-0.5 mx-auto mt-1 rounded-full bg-cyan-400/30 group-hover:bg-cyan-400/60 transition-colors" />
+      </div>
+    </aside>
+  );
+}
 
 const CamerasPage = () => {
   const { health: pipelineHealth, online: pipelineOnline } = usePipelineHealth();
@@ -83,9 +190,9 @@ const CamerasPage = () => {
   const peakCamLabel = peaks ? prettyCamName(peaks.camera_name) : '—';
 
   return (
-    <div className="theme-cockpit" style={{ background: 'var(--app-bg)', minHeight: '100vh', color: 'var(--app-fg)' }}>
+    <div className="theme-cockpit min-h-screen lg:h-screen lg:flex lg:flex-col lg:overflow-hidden" style={{ color: 'var(--app-fg)' }}>
       <style>{`
-        .glass-card { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--card-border); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
+      .glass-card { background: var(--card-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--card-border); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset; }
         .glass-card:hover { background: var(--card-bg-hover); border-color: var(--card-border-hover); }
         .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
         .stat-value { font-size: 22px; font-weight: 600; color: var(--text-strong); line-height: 1.2; }
@@ -100,6 +207,9 @@ const CamerasPage = () => {
         .live-pulse::after { content: ''; position: absolute; inset: -3px; border-radius: 9999px; background: #ef4444; animation: pulse-ring 1.5s cubic-bezier(0.215,0.61,0.355,1) infinite; }
         .scan-line { position: absolute; left: 0; right: 0; height: 2px; background: linear-gradient(to right, transparent, rgba(249,115,22,0.4), transparent); animation: scan 3s linear infinite; pointer-events: none; z-index: 5; }
         .bg-glow { position: fixed; border-radius: 9999px; filter: blur(120px); opacity: 0.06; pointer-events: none; z-index: -10; }
+        @keyframes ticker-down { 0% { transform: translateY(0); } 100% { transform: translateY(-50%); } }
+        .animate-ticker-down { animation: ticker-down 20s linear infinite; }
+        .animate-ticker-down:hover { animation-play-state: paused; }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 9999px; }
       `}</style>
 
@@ -108,28 +218,18 @@ const CamerasPage = () => {
 
       <SiteHeader />
 
-      <main className="pt-20 pb-8 px-4 md:px-6">
-        <div className="max-w-7xl mx-auto">
+      <main className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+        <LeftTrafficBanner loads={loads} />
 
-          {/* Header */}
-          <div className="mb-4 anim d1">
-            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-orange-400 mb-1.5">Prishtinë — Traffic Corridor</p>
-                <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-white">Traffic Camera Center</h1>
-              </div>
-              <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                <iconify-icon icon="lucide:map-pin" width="12" />
-                <span>{selectedCamera.name} — Gjirafa Slow TV</span>
-              </div>
-            </div>
-          </div>
+        {/* ── CENTER: Scrollable Camera Grid ── */}
+        <div className="flex-1 overflow-y-auto pt-16 lg:pt-16">
+        <div className="max-w-6xl mx-auto py-2 px-2 md:px-3 lg:py-2">
 
-          {/* Main Grid */}
-          <div className="grid lg:grid-cols-12 gap-5">
+          {/* Main Grid — responsive: stack on mobile, side-by-side on lg+ */}
+          <div className="flex flex-col lg:grid lg:grid-cols-12 gap-3">
 
             {/* LEFT: Camera Feeds */}
-            <div className="lg:col-span-7 xl:col-span-8 space-y-3 anim d2">
+            <div className="lg:col-span-7 xl:col-span-8 space-y-2 anim d1">
 
               {/* Primary Camera — Gjirafa iframe */}
               <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', background: '#000' }}>
@@ -244,23 +344,23 @@ const CamerasPage = () => {
             </div>
 
             {/* RIGHT: Live Chat + Hourly Throughput */}
-            <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-4 anim d3">
-              <LiveChat className="flex-1 min-h-[340px]" />
+            <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-3 anim d3 order-last lg:order-none">
+              <LiveChat className="flex-1 min-h-[200px] lg:min-h-[260px]" />
 
-              {/* Hourly Throughput — same real data, moved below the chat */}
-              <div className="glass-card rounded-xl p-4 flex-shrink-0">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <iconify-icon icon="lucide:bar-chart-3" width="16" className="text-zinc-500" />
-                    <span className="text-sm font-semibold tracking-tight">Hourly Throughput</span>
+              {/* Hourly Throughput */}
+              <div className="glass-card rounded-xl p-3 flex-shrink-0">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <iconify-icon icon="lucide:bar-chart-3" width="13" className="text-zinc-500" />
+                    <span className="text-[11px] font-semibold tracking-tight">Hourly Throughput</span>
                   </div>
-                  <div className="flex items-center gap-3 text-[10px]">
-                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-orange-500/60" />Today</span>
-                    <span className="flex items-center gap-1.5 text-zinc-500"><span className="w-2 h-2 rounded-sm bg-zinc-700" />Yesterday</span>
+                  <div className="flex items-center gap-2 text-[9px]">
+                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-sm bg-orange-500/60" />Today</span>
+                    <span className="flex items-center gap-1 text-zinc-500"><span className="w-1.5 h-1.5 rounded-sm bg-zinc-700" />Yesterday</span>
                   </div>
                 </div>
                 <ThroughputChart today={hourlyToday} yesterday={hourlyYesterday} />
-                <div className="flex justify-between mt-2 text-[9px] text-zinc-600 font-mono">
+                <div className="flex justify-between mt-1.5 text-[8px] text-zinc-600 font-mono">
                   <span>12AM</span><span>5AM</span><span>9AM</span><span>2PM</span><span>7PM</span><span>11PM</span>
                 </div>
               </div>
@@ -268,9 +368,10 @@ const CamerasPage = () => {
             </div>
           </div>
         </div>
-      </main>
+        </div>
 
-      <SiteFooter />
+        <RightTrafficBanner loads={loads} peaks={peaks} peakTimeLabel={peakTimeLabel} peakCamLabel={peakCamLabel} />
+      </main>
     </div>
   );
 };

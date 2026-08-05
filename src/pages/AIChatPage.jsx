@@ -13,7 +13,6 @@ import {
 import useTrafficData from '../hooks/useTrafficData';
 import { useAuth } from '../hooks/useAuth';
 import SiteHeader from '../components/SiteHeader';
-import SiteFooter from '../components/SiteFooter';
 import AuthPromptModal from '../components/AuthPromptModal';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -226,9 +225,9 @@ const AIChatPage = () => {
     : '—';
 
   return (
-    <div className="theme-cockpit" style={{ background: 'var(--app-bg)', minHeight: '100vh', color: 'var(--app-fg)' }}>
+    <div className="theme-cockpit h-screen flex flex-col overflow-hidden" style={{ color: 'var(--app-fg)' }}>
       <style>{`
-        .glass-card { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--card-border); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); }
+        .glass-card { background: var(--card-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--card-border); transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset; }
         .glass-card:hover { background: var(--card-bg-hover); border-color: var(--card-border-hover); }
         .stat-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
         .progress-track { background: var(--track-bg); border-radius: 9999px; overflow: hidden; height: 4px; }
@@ -543,8 +542,6 @@ const AIChatPage = () => {
         from="/ai-chat"
         message="You need to log in or sign up to chat with the AI assistant. Your message is saved and will be waiting for you when you get back."
       />
-
-      <SiteFooter />
     </div>
   );
 };

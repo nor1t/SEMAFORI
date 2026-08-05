@@ -15,6 +15,11 @@ export default {
         navy: { 950:'#040810', 900:'#060a14', 800:'#0a0e1a', 700:'#111827', 600:'#1a2035', 500:'#243049', 400:'#334155' },
         paper: { 50:'#faf9f5', 100:'#f5f2ea', 200:'#ebe5d8', 300:'#ddd5c4' },
         tblue: { 50:'#eff6ff', 100:'#dbeafe', 200:'#bfdbfe', 300:'#93c5fd', 400:'#60a5fa', 500:'#3b82f6', 600:'#2563eb', 700:'#1d4ed8', 800:'#1e3a5f', 900:'#0f2540', 950:'#091a30' },
+        accent: '#6366f1',
+        surface: {
+          light: 'rgba(255,255,255,0.65)',
+          dark: 'rgba(255,255,255,0.03)',
+        },
       },
       animation: {
         'pulse-slow':'pulse-slow 3s ease-in-out infinite',
