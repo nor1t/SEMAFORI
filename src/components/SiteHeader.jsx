@@ -160,8 +160,7 @@ const SiteHeader = () => {
           <div className="relative" ref={settingsRef}>
             <button
               onClick={() => setSettingsOpen((prev) => !prev)}
-              className={`group flex h-9 w-9 items-center justify-center rounded-full shadow-md transition-all duration-300 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-tblue-400/50 ${settingsOpen ? 'ring-2 ring-tblue-400/50' : ''}`}
-              style={{ background: dark ? 'linear-gradient(135deg, #1e3a5f, #0f2540)' : 'linear-gradient(135deg, #dbeafe, #93c5fd)' }}
+              className={`group flex h-9 w-9 items-center justify-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-tblue-400/50 ${settingsOpen ? 'ring-2 ring-tblue-400/50' : ''}`}
               aria-label="Settings"
               aria-expanded={settingsOpen}
             >

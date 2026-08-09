@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { supabase } from '../services/supabaseClient';
 import { groq } from '../services/groqService';
 import {
   buildLiveNetworkSummary,
@@ -17,7 +18,7 @@ import AuthPromptModal from '../components/AuthPromptModal';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-/* ── Route helpers ── */
+/* Route helpers */
 async function geocodePlace(query, signal) {
   const url = new URL('https://nominatim.openstreetmap.org/search');
   url.searchParams.set('q', query);
@@ -146,6 +147,9 @@ const AIChatPage = () => {
   const [messages, setMessages] = useState([
     { id: 'assistant-welcome', role: 'assistant', content: 'Ask me about congestion, junction priorities, or a route in the format "from A to B". I answer with live counts from the four Prishtina cameras and can add launch links for Google Maps, Waze, and Apple Maps.', links: [], source: 'SEMAFORI AI', timestamp: new Date() },
   ]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(true);
+  const [chatHistory, setChatHistory] = useState([]);
   const [sessionStart] = useState(new Date());
   const [sessionTime, setSessionTime] = useState('0:00');
 
@@ -157,10 +161,60 @@ const AIChatPage = () => {
     }, 1000);
     return () => clearInterval(id);
   }, [sessionStart]);
+  /* Load chat history from Supabase */
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('ai_chat_history').select('messages').eq('user_id', user.id).single()
+      .then(({ data }) => {
+        if (data && data.messages && Array.isArray(data.messages)) {
+          setChatHistory(data.messages);
+        }
+      }).catch(() => {});
+  }, [user]);
 
-  /* Supabase snapshots — replaced by useTrafficData (loads) */
+  
+  const persistHistory = (msgs) => {
+    if (!user) return;
+    const newPairs = [];
+    for (let i = 0; i < msgs.length; i++) {
+      if (msgs[i].role === 'user' && msgs[i+1] && msgs[i+1].role === 'assistant') {
+        newPairs.push({
+          id: msgs[i].id, role: 'user', content: msgs[i].content, timestamp: msgs[i].timestamp,
+          reply: { role: 'assistant', content: msgs[i+1].content, links: msgs[i+1].links || [], source: msgs[i+1].source || 'SEMAFORI AI', timestamp: msgs[i+1].timestamp }
+        });
+        i++;
+      }
+    }
+    setChatHistory((prev) => {
+      const existingIds = new Set(newPairs.map(p => p.id));
+      const merged = [...prev.filter(p => !existingIds.has(p.id)), ...newPairs];
+      supabase.from('ai_chat_history').upsert({ user_id: user.id, messages: merged, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).then(() => {}).catch((e) => console.error('History save failed:', e));
+      return merged;
+    });
+  };
 
-  /* Stats come from useTrafficData — no simulation intervals remain. */
+  const restoreHistory = (pair, allPairs) => {
+    const idx = allPairs.indexOf(pair);
+    const msgs = [{ id: 'assistant-welcome', role: 'assistant', content: 'Ask me about congestion, junction priorities, or a route in the format "from A to B". I answer with live counts from the four Prishtina cameras and can add launch links for Google Maps, Waze, and Apple Maps.', links: [], source: 'SEMAFORI AI', timestamp: new Date() }];
+    for (let i = 0; i <= idx; i++) {
+      const p = allPairs[i];
+      msgs.push({ id: p.id || Date.now().toString(), role: 'user', content: p.content, timestamp: new Date(p.timestamp) });
+      if (p.reply) msgs.push({ id: (Date.now()+1).toString(), role: 'assistant', content: p.reply.content || '', links: p.reply.links || [], source: p.reply.source || 'SEMAFORI AI', timestamp: new Date(p.reply.timestamp) });
+    }
+    setMessages(msgs);
+    setHistoryOpen(false);
+  };
+
+  const deleteHistoryPair = (pair) => {
+    const updated = chatHistory.filter(p => p !== pair);
+    setChatHistory(updated);
+    if (user) supabase.from('ai_chat_history').upsert({ user_id: user.id, messages: updated, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).then(() => {}).catch(() => {});
+  };
+
+
+  /* Supabase snapshots replaced by useTrafficData (loads) */
+
+  /* Stats come from useTrafficData; no simulation intervals remain. */
 
   /* Scroll on new messages */
   useEffect(() => {
@@ -200,7 +254,7 @@ const AIChatPage = () => {
       const routeRequest = detectRouteRequest(nextInput);
       const routeContext = routeRequest ? await fetchRouteContext(routeRequest) : null;
       const reply = await getAssistantReply({ message: nextInput, history, liveSummary, routeContext });
-      setMessages((prev) => [...prev, { id: `assistant-${Date.now()}`, role: 'assistant', content: reply.content, links: reply.links, source: reply.source, timestamp: new Date() }]);
+      const updated = [...history, { id: `assistant-${Date.now()}`, role: 'assistant', content: reply.content, links: reply.links, source: reply.source, timestamp: new Date() }]; setMessages(updated); setTimeout(() => persistHistory(updated), 100);
     } finally { setTyping(false); }
   };
 
@@ -262,34 +316,57 @@ const AIChatPage = () => {
 
       <SiteHeader />
 
-      <main className="pt-14 h-screen flex flex-col">
-        <div className="flex-1 flex overflow-hidden">
+      <main className="pt-16 flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex overflow-hidden relative">
 
-          {/* ══════════ LEFT: Chat Area ══════════ */}
-          <div className="flex-1 flex flex-col min-w-0 anim d1">
+          {/* Left: Chat Area */}
+            {/* History sidebar */}
+            {historyOpen && (
+              <div className="absolute left-0 top-0 bottom-0 w-[280px] z-30 border-r border-white/[0.06] flex flex-col" style={{ background: 'var(--app-bg)' }}>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-white/50">History</span>
+                  <button onClick={() => setHistoryOpen(false)} className="p-1 rounded hover:bg-white/5"><iconify-icon icon="lucide:x" width="14" className="text-zinc-500" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto chat-scroll p-3 space-y-1.5">
+                  {chatHistory.length === 0 ? (
+                    <p className="text-[11px] text-zinc-600 text-center py-8">No saved conversations yet.<br />Start chatting to save history.</p>
+                  ) : chatHistory.map((pair, i) => (
+                    <div key={pair.id || i} className="group flex items-start gap-2 p-2 rounded-lg hover:bg-white/[0.04] transition-colors">
+                      <button onClick={() => restoreHistory(pair, chatHistory)} className="flex-1 text-left min-w-0">
+                        <div className="text-[11px] text-zinc-300 truncate">{pair.content.slice(0, 50)}{pair.content.length > 50 ? '...' : ''}</div>
+                        <div className="text-[9px] text-zinc-600 mt-0.5">{pair.timestamp ? new Date(pair.timestamp).toLocaleDateString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : ''}</div>
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); deleteHistoryPair(pair); }} className="p-1 opacity-0 group-hover:opacity-100 hover:text-red-400 text-zinc-600 transition-all"><iconify-icon icon="lucide:trash-2" width="11" /></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          <div className={`flex-1 flex flex-col min-w-0 relative anim d1 transition-all ${historyOpen ? 'ml-[280px]' : ''}`}>
+
             {/* Chat Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800/50">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500/20 to-orange-600/10 border border-orange-500/20 flex items-center justify-center">
-                  <iconify-icon icon="lucide:sparkles" width="16" className="text-orange-400" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold tracking-tight">SEMAFORI AI</h2>
-                  <p className="text-[10px] text-zinc-500">Traffic + route guidance · Groq {GROQ_MODEL}</p>
-                </div>
-              </div>
               <div className="flex items-center gap-1.5">
-                <button className="p-2 rounded-lg hover:bg-white/5 transition-colors" title="Clear chat" onClick={() => setMessages([{ id: 'assistant-welcome', role: 'assistant', content: 'Ask me about congestion, junction priorities, or a route in the format "from A to B".', links: [], source: 'SEMAFORI AI', timestamp: new Date() }])}>
-                  <iconify-icon icon="lucide:trash-2" width="16" className="text-zinc-500" />
+                <img src="/AIlogo.png" alt="SEMAFORI AI" className="w-7 h-7 rounded-md object-contain" />
+                <button onClick={() => setHistoryOpen((v) => !v)} className={`p-2 rounded-lg transition-colors ${historyOpen ? 'text-orange-400 bg-orange-500/10' : 'text-zinc-500 hover:bg-white/5'}`} title="Chat history">
+                  <iconify-icon icon="lucide:clock" width="16" />
+                </button>
+                <button className="p-2 rounded-lg hover:bg-white/5 transition-colors flex items-center gap-1.5" title="New chat" onClick={() => { setMessages([{ id: 'assistant-welcome', role: 'assistant', content: 'Ask me about congestion, junction priorities, or a route in the format \"from A to B\".', links: [], source: 'SEMAFORI AI', timestamp: new Date() }]); setHistoryOpen(false); }}>
+                  <iconify-icon icon="lucide:plus" width="16" className="text-zinc-400" />
+                  <span className="text-[11px] text-zinc-400">New chat</span>
                 </button>
               </div>
+              <button onClick={() => setShowMetrics((v) => !v)} className={`p-1.5 rounded-lg transition-colors ${showMetrics ? 'text-orange-400 bg-orange-500/10' : 'text-zinc-500 hover:bg-white/5'}`} title="Toggle traffic metrics">
+                <iconify-icon icon="lucide:bar-chart-3" width="14" />
+              </button>
             </div>
 
             {/* Messages */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto chat-scroll px-5 py-4 space-y-4">
               <div className="flex justify-center msg-in">
                 <div className="px-3 py-1.5 rounded-full bg-zinc-800/40 border border-zinc-700/30 text-[10px] text-zinc-500 font-medium">
-                  Session started · {sessionStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })} · Groq {GROQ_MODEL}
+                  Session started at {sessionStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })} • Groq {GROQ_MODEL}
                 </div>
               </div>
 
@@ -298,9 +375,7 @@ const AIChatPage = () => {
                   <div className={message.role === 'user' ? 'max-w-[75%]' : 'max-w-[80%]'}>
                     {message.role === 'assistant' && (
                       <div className="flex items-center gap-2 mb-2">
-                        <div className="w-5 h-5 rounded-md bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center">
-                          <iconify-icon icon="lucide:sparkles" width="10" className="text-white keep-white" />
-                        </div>
+                        <img src="/AIlogo.png" alt="AI" className="w-5 h-5 rounded-md object-contain" />
                         <span className="text-[10px] font-medium text-zinc-500">{message.source || 'SEMAFORI AI'}</span>
                         <span className="text-[9px] text-zinc-600 font-mono">{message.timestamp?.toLocaleTimeString?.('en-US', { hour12: false }) || ''}</span>
                       </div>
@@ -397,7 +472,8 @@ const AIChatPage = () => {
             </div>
           </div>
 
-          {/* ══════════ RIGHT: Traffic Stats ══════════ */}
+          {/* Right: Traffic Stats */}
+          {showMetrics && (
           <div className="hidden lg:flex flex-col w-[320px] xl:w-[360px] border-l border-zinc-800/50 overflow-y-auto chat-scroll">
             {/* Top Metrics */}
             <div className="p-4 space-y-3 anim d2">
@@ -509,7 +585,7 @@ const AIChatPage = () => {
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
                           <span className="text-[11px] text-zinc-400">{name}</span>
                         </div>
-                        <span className="text-[10px] font-mono text-zinc-500">{load.vehicle_count ?? '—'} · {Number(load.rolling_rate) || 0}/cyc</span>
+                        <span className="text-[10px] font-mono text-zinc-500">{load.vehicle_count ?? '—'} • {Number(load.rolling_rate) || 0}/cyc</span>
                       </div>
                     );
                   })}
@@ -532,6 +608,7 @@ const AIChatPage = () => {
               </div>
             </div>
           </div>
+          )}
         </div>
       </main>
 

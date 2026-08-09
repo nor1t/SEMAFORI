@@ -27,11 +27,11 @@ function ThroughputChart({ today, yesterday }) {
         <div key={i} className="flex-1 relative h-full">
           <div
             className="absolute bottom-0 w-full rounded-sm"
-            style={{ height: pct(yesterday[i]) + '%', background: 'rgba(255,255,255,0.05)' }}
+            style={{ height: pct(yesterday[i]) + '%', background: 'rgba(255,255,255,0.08)', zIndex: 0 }}
           />
           <div
             className="absolute bottom-0 w-full rounded-sm"
-            style={{ height: pct(v) + '%', background: v >= max * 0.8 ? 'rgba(249,115,22,0.65)' : 'rgba(249,115,22,0.3)' }}
+            style={{ height: pct(v) + '%', background: v >= max * 0.8 ? 'rgba(249,115,22,0.65)' : 'rgba(249,115,22,0.4)', zIndex: 1 }}
           />
         </div>
       ))}
@@ -59,7 +59,7 @@ function LeftTrafficBanner({ loads }) {
         <span className="text-[7px] font-semibold uppercase tracking-[0.18em] text-orange-400/50 group-hover:text-orange-400/80 transition-colors" style={{ writingMode: 'vertical-rl' }}>MONITOR</span>
       </div>
       <div className="flex-1 w-full overflow-hidden relative px-1">
-        <div className="flex flex-col gap-1 animate-ticker-down">
+        <div className="flex flex-col gap-1 animate-ticker-up">
           {[...items, ...items].map((l, i) => {
             const level = l.load_level || 'low';
             const color = getLoadColor(level);
@@ -111,7 +111,7 @@ function RightTrafficBanner({ loads, peaks, peakTimeLabel, peakCamLabel }) {
         <span className="text-[7px] font-semibold uppercase tracking-[0.18em] text-cyan-400/50 group-hover:text-cyan-400/80 transition-colors" style={{ writingMode: 'vertical-rl' }}>PULSE</span>
       </div>
       <div className="flex-1 w-full overflow-hidden relative px-1">
-        <div className="flex flex-col gap-1.5 animate-ticker-down">
+        <div className="flex flex-col gap-1.5 animate-ticker-up">
           {[1, 2].map(rep => (
             <React.Fragment key={rep}>
               <div className="text-center py-1.5 rounded-[4px] bg-white/[0.02] hover:bg-white/[0.06] transition-colors">
@@ -207,9 +207,9 @@ const CamerasPage = () => {
         .live-pulse::after { content: ''; position: absolute; inset: -3px; border-radius: 9999px; background: #ef4444; animation: pulse-ring 1.5s cubic-bezier(0.215,0.61,0.355,1) infinite; }
         .scan-line { position: absolute; left: 0; right: 0; height: 2px; background: linear-gradient(to right, transparent, rgba(249,115,22,0.4), transparent); animation: scan 3s linear infinite; pointer-events: none; z-index: 5; }
         .bg-glow { position: fixed; border-radius: 9999px; filter: blur(120px); opacity: 0.06; pointer-events: none; z-index: -10; }
-        @keyframes ticker-down { 0% { transform: translateY(0); } 100% { transform: translateY(-50%); } }
-        .animate-ticker-down { animation: ticker-down 20s linear infinite; }
-        .animate-ticker-down:hover { animation-play-state: paused; }
+        @keyframes ticker-up { 0% { transform: translateY(0); } 100% { transform: translateY(-50%); } }
+        .animate-ticker-up { animation: ticker-up 20s linear infinite; }
+        .animate-ticker-up:hover { animation-play-state: paused; }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 9999px; }
       `}</style>
 
