@@ -1,7 +1,7 @@
 # SEMAFORI
 
 Sistem për menaxhimin e incidenteve në trafik dhe monitorim të trafikut në kohë
-reale, i ndërtuar me React, Supabase, Leaflet, dhe Groq.
+reale, i ndërtuar me React, Python, Supabase, Leaflet, dhe Groq.
 
 Përbëhet nga dy shërbime të ndara:
 
@@ -12,15 +12,11 @@ Përbëhet nga dy shërbime të ndara:
 
 **Live URL:** https://semafori.vercel.app  
 **Statusi:** URL u verifikua më 5 maj 2026  
-**Dokumenti i prezantimit:** [docs/demo-plan.md](./docs/demo-plan.md)  
-**Dokumentimi final i projektit:** [docs/FINAL_PROJECT_DOCUMENTATION.md](./docs/FINAL_PROJECT_DOCUMENTATION.md)
 
 ---
 
-## System Architecture (Thesis Defence Walkthrough)
+## System Architecture 
 
-> This section is written so you can walk someone through the entire data flow
-> cold, from camera to dashboard, in under 5 minutes.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -156,59 +152,59 @@ Camera feeds are provided by **Gjirafa Slow TV** (video.gjirafa.com).
 
 ---
 
-## Çfarë bën projekti (kjo pjesë frontend)
+## What does the project do (this part is frontend)
 
-SEMAFORI u shërben operatorëve të trafikut dhe qendrave të monitorimit për:
+SEMAFORI serves traffic operators and monitoring centers for:
 
-- krijimin e raporteve të incidenteve
-- përditësimin dhe fshirjen e tyre
-- shfaqjen e statistikave në dashboard
-- zgjedhjen e lokacionit në hartë
-- përdorimin e një asistenti AI për analizë dhe rekomandime
-- monitorimin e kamerave të trafikut në kohë reale (Gjirafa Slow TV) me
-  klasifikimin e ngarkesës së rrugës (low / medium / high / congested)
-- paraqitjen e historikut të numërimit të automjeteve në grafikë
-- ndërrimin e gjuhës dhe theme
+- creating incident reports
+- updating and deleting them
+- displaying statistics on the dashboard
+- selecting a location on the map
+- using an AI assistant for analysis and recommendations
+- monitoring traffic cameras in real time (Gjirafa Slow TV) with
+classifying road load (low / medium / high / congested)
+- displaying vehicle count history in graphs
+- changing language and theme
 
-## Teknologjitë
+## Technologies
 
-| Teknologji     | Qëllimi                                     |
+| Technology     | Purpose                                     |
 | -------------- | ------------------------------------------- |
-| React + Vite   | Frontend SPA framework dhe build tool       |
-| Tailwind CSS   | Utility-first CSS për stilim                |
-| Supabase Auth  | Autentikim i përdoruesve                    |
-| Supabase DB    | Ruajtja e incidenteve, trafikut, dhe load   |
-| Leaflet        | Hartë interaktive me markerë trafiku        |
-| Groq API       | Asistent AI (Llama 3.1 8B) për analizë     |
-| Recharts       | Grafikët e historikut të trafikut           |
-| Vercel         | Deployment i frontend-it                    |
+| React + Vite   | Frontend SPA framework and build tool       |
+| Tailwind CSS   | Utility-first CSS for styling               |
+| Supabase Auth  | User authentication                         |
+| Supabase DB    | Incident, traffic, and load storage         |
+| Leaflet        | Interactive map with traffic markers        |
+| Groq API       | AI Assistant (Llama 3.1 8B) for analysis    |
+| Recharts       | Traffic history graphs                      |
+| Vercel         | Front end deployment                        |
 
-## Struktura e projektit
+## Project Structure
 
 ```
 SEMAFORI/
-├── README.md                       # Ky dokument
+├── README.md                       
 ├── index.html                      # HTML entry point
-├── package.json                    # NPM dependencies dhe scripts
-├── vite.config.js                  # Vite konfigurimi
-├── tailwind.config.js              # Tailwind konfigurimi
+├── package.json                    # NPM dependencies and scripts
+├── vite.config.js                  # Vite configuration
+├── tailwind.config.js              # Tailwind configuration
 ├── postcss.config.js               # PostCSS plugin config
 ├── eslint.config.js                # ESLint rules
 ├── vercel.json                     # Vercel deployment config
 ├── public/                         # Static assets (favicon, logo, icons)
-├── docs/                           # Dokumentacioni shtesë
-│   ├── demo-plan.md                # Plani i demos për prezantim
+├── docs/                           # Extra documents
+│   ├── demo-plan.md                # Demo plan for presentation
 │   ├── FINAL_PROJECT_DOCUMENTATION.md
 │   └── screenshots/
 ├── src/
 │   ├── main.jsx                    # React entry point
 │   ├── App.jsx                     # Router + context providers
 │   ├── index.css                   # Global styles
-│   ├── assets/                     # Imazhe dhe ikona
+│   ├── assets/                     # Images and icons
 │   ├── components/
-│   │   ├── ProtectedRoute.jsx      # Route guard (kërkon auth)
-│   │   ├── SiteHeader.jsx          # Header i përbashkët
-│   │   └── SiteFooter.jsx          # Footer i përbashkët
+│   │   ├── ProtectedRoute.jsx      # Route guard 
+│   │   ├── SiteHeader.jsx          # Header 
+│   │   └── SiteFooter.jsx          # Footer 
 │   ├── context/
 │   │   ├── AuthContext.jsx         # Supabase auth state
 │   │   ├── ThemeContext.jsx        # Light/dark theme
@@ -216,139 +212,76 @@ SEMAFORI/
 │   ├── hooks/
 │   │   └── useAuth.js             # Auth hook
 │   ├── pages/
-│   │   ├── Login.jsx               # Faqja e hyrjes
-│   │   ├── Signup.jsx              # Faqja e regjistrimit
-│   │   ├── Profile.jsx             # Profili i përdoruesit
-│   │   ├── CamerasPage.jsx         # Qendra e kamerave (live, 100% real)
-│   │   ├── AIChatPage.jsx          # Asistenti AI me të dhëna live
+│   │   ├── Login.jsx               
+│   │   ├── Signup.jsx             
+│   │   ├── Profile.jsx             
+│   │   ├── CamerasPage.jsx         # Cameras Centre (live, 100% real)
+│   │   ├── AIChatPage.jsx          # AI Assistant with live updates
 │   │   ├── LiveMapPage.jsx         # Google Maps + traffic layer
-│   │   └── TrafficAnalytics.jsx    # Analitika (rush hour, anomali, CSV)
-│   ├── legacy/                     # Skedarë të vjetër (jashtë aplikacionit)
+│   │   └── TrafficAnalytics.jsx    # Analytics (rush hour, anomalies, CSV)
+│   ├── legacy/                     
 │   └── services/
 │       ├── supabaseClient.js       # Supabase JS client
 │       ├── groqService.js          # Groq AI API client
-│       └── reportService.js        # CRUD për raportet e incidenteve
-└── semafori-vision/                # Python pipeline (shih README-në atje)
+│       └── reportService.js        # CRUD for incident reports
+└── semafori-vision/                # Python pipeline 
     ├── README.md
     ├── scheduler.py                # Main entry point — APScheduler loop
     ├── capture.py                  # FFmpeg frame capture
     ├── detect.py                   # YOLOv8n + ByteTrack + LineZone
     ├── supabase_db.py             # Supabase insert
     ├── traffic_load.py            # Road-load classification
-    ├── benchmark_detectors.py     # Detector comparison (thesis)
-    ├── validate_counts.py         # Manual-vs-auto validation (thesis)
+    ├── benchmark_detectors.py     # Detector comparison 
+    ├── validate_counts.py         # Manual-vs-auto validation 
     └── ...
 ```
 
-## Faqet kryesore
+## Main Pages
 
-Route-t e aplikacionit (`src/App.jsx`):
+Application Routes (`src/App.jsx`):
 
-| Route | Faqja | Përshkrimi |
+| Route | Page | Description |
 | ----- | ----- | ---------- |
-| `/` | — | Ridrejtim te `/cameras` |
-| `/login` | `Login` | Hyrja me Supabase Auth |
-| `/signup` | `Signup` | Regjistrimi i llogarisë |
-| `/cameras` | `CamerasPage` | Qendra e kamerave: 4 stream-e live Gjirafa, snapshot-et e anotuara nga pipeline-i, badge-a LIVE/STALE, dhe metrika 100% reale nga Supabase (asgjë e simuluar) |
-| `/ai-chat` | `AIChatPage` | Asistenti Groq që përgjigjet me numrat realë të kamerave live + vlerësim rrugësh (Nominatim + OSRM/Google) me linqe për Google Maps / Waze / Apple Maps |
-| `/live-map` | `LiveMapPage` | Google Maps (dark, Road/Satellite/Hybrid) me shtresën reale Google Traffic, markerë kamerash me ngjyra sipas ngarkesës dhe markerë raportesh të përdoruesit |
-| `/analytics` | `TrafficAnalytics` | Analitika e plotë: profili i orës së ditës (rush hour), krahasimi i kamerave, përzierja e llojeve të automjeteve, shpërndarja e ngarkesave, pikat, anomalitë (2σ), mbulimi i të dhënave, eksport CSV |
-| `/profile` | `Profile` | Profili i përdoruesit, avatar, statistikat e raporteve |
+| `/` | — | Redirect to `/cameras` |
+| `/login` | `Login` | Login with Supabase Auth |
+| `/signup` | `Signup` | Account Registration |
+| `/cameras` | `CamerasPage` | Camera Hub: 4 Gjirafa live streams, pipeline annotated snapshots, LIVE/STALE badges, and 100% real metrics from Supabase (nothing simulated) |
+| `/ai-chat` | `AIChatPage` | Groq Assistant that responds with real live camera numbers + road rating (Nominations + OSRM/Google) with links to Google Maps / Waze / Apple Maps |
+| `/live-map` | `LiveMapPage` | Google Maps (dark, Road/Satellite/Hybrid) with real-time Google Traffic layer, colored camera markers by load and user report markers |
+| `/analytics` | `TrafficAnalytics` | Full analytics: rush hour profile, camera comparison, vehicle type mix, load distribution, points, anomalies (2σ), data coverage, CSV export |
+| `/profile` | `Profile` | User profile, avatar, report statistics |
 
-Skedarët e vjetër të pa-përdorur gjenden në `src/legacy/` (jashtë aplikacionit, të ruajtur për referencë).
+Old unused files are located in `src/legacy/` (outside the application, stored for reference).
 
-### Pipeline-i i detektimit (tracked mode)
+### Detection pipeline (tracked mode)
 
-Shërbimi Python (`semafori-vision/scheduler.py`) përdor `PIPELINE_MODE=tracked`
-(default): për çdo kamerë, çdo 5 minuta, kap një burim prej 32 frame-ash
-(8 s × 4 fps), ekzekuton YOLOv8n-ONNX mbi çdo frame, i gjurmon automjetet me
-ByteTrack dhe numëron kalimet e vijës me LineZone.  Çdo rresht në
-`traffic_counts` përmban `vehicle_count` (automjetet e dukshme — mediana e
-burimit), `in_count` / `out_count` (kalimet e vijës sipas drejtimit),
-`vehicle_type_breakdown` (JSONB) dhe `avg_confidence`.  Nëse kapja e burimit
-dështon, kamera bie automatikisht në modalitetin single-frame për atë cikël
-pa ndikuar kamerat e tjera.
+The Python service (`semafori-vision/scheduler.py`) uses `PIPELINE_MODE=tracked`
 
-## Nisja lokale
+(default): for each camera, every 5 minutes, it captures a 32-frame feed
 
-Krijo `.env.local` me këto vlera:
+(8 s × 4 fps), runs YOLOv8n-ONNX on each frame, tracks vehicles with
+ByteTrack and counts line crossings with LineZone. Each row in
+`traffic_counts` contains `vehicle_count` (visible vehicles — median of the feed), `in_count` / `out_count` (line crossings by direction),
+`vehicle_type_breakdown` (JSONB) and `avg_confidence`. If feed capture
+fails, the camera automatically falls into single-frame mode for that cycle
+without affecting other cameras.
 
-```env
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-VITE_GROQ_API_KEY=your_groq_api_key
-VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key    # opsionale
-VITE_SNAPSHOT_BASE_URL=http://localhost:8001         # prod: https://<render-app>.onrender.com
-```
 
-Pastaj:
 
-```bash
-npm install
-npm run dev
-```
 
-## Komandat kryesore
+## Connecting to semafori-vision
 
-```bash
-npm run dev        # Nis serverin lokal të zhvillimit
-npm run build      # Ndërton për production
-npm run preview    # Shfaq build-in e production-it lokal
-npm run lint       # Kontrollon kodin me ESLint
-```
+The frontend communicates with the Python pipeline via two routes:
 
-## Lidhja me semafori-vision
+1. **Supabase** — both services read/write to the same tables
+(`traffic_counts`, `traffic_load`) using the same anonymous key.
+2. **HTTP snapshots** — scheduler.py spawns an HTTP server on port
+8001 (or `$PORT` in Render) that serves annotated snapshots
+(`output/latest_<camera>.jpg`) and `output/health.json`.
+The frontend loads snapshots via the `snapshotUrl()` helper from
+`src/shared/snapshots.js`, which uses `VITE_SNAPSHOT_BASE_URL`
+(local default: `http://localhost:8001`; in production: HTTPS URL of
+Render, e.g. `https://<render-app>.onrender.com` — set as an env var
+in Vercel). `health.json` is used by the `usePipelineHealth` hook to
+display LIVE / STALE / OFFLINE badges on each camera.
 
-Frontend-i komunikon me pipeline-in Python përmes dy rrugëve:
-
-1. **Supabase** — të dy shërbimet lexojnë/shkruajnë në të njëjtat tabela
-   (`traffic_counts`, `traffic_load`) duke përdorur të njëjtin anon key.
-2. **HTTP snapshots** — scheduler.py spawn-on një HTTP server në portin
-   8001 (ose `$PORT` në Render) që shërben pamjet e anotuara
-   (`output/latest_<camera>.jpg`) dhe `output/health.json`.
-   Frontend-i i ngarkon snapshot-et përmes helper-it `snapshotUrl()` nga
-   `src/shared/snapshots.js`, i cili përdor `VITE_SNAPSHOT_BASE_URL`
-   (default lokal: `http://localhost:8001`; në production: URL HTTPS e
-   Render, p.sh. `https://<render-app>.onrender.com` — vendoset si env var
-   në Vercel). `health.json` përdoret nga hook-u `usePipelineHealth` për
-   të shfaqur badge-a LIVE / STALE / OFFLINE mbi çdo kamerë.
-
-Për të parë të dhënat reale në frontend, duhet të kesh:
-
-- `semafori-vision/scheduler.py` duke u ekzekutuar
-- Supabase të konfiguruar me tabelat nga `schema.sql`
-- Frontend-in të lidhur me të njëjtin Supabase project
-
-## Deployment
-
-Ky projekt deploy-ohet në Vercel. `vercel.json` tashmë është i konfiguruar për Vite dhe SPA routing.
-
-Për një deploy të ri:
-
-1. bëj `git push` në branch-in kryesor
-2. sigurohu që projekti në Vercel është i lidhur me këtë repo
-3. kontrollo që environment variables në Vercel janë të sakta
-4. Vercel do të nisë deploy automatikisht
-
-## Kontrolli para prezantimit
-
-Para demos kontrollo:
-
-- `npm run build`
-- `npm run lint`
-- login/signup
-- krijimin e një incidenti
-- edit/delete
-- hartën
-- AI Assistant
-- Kamerat live dhe snapshot-et (kërkon `semafori-vision/scheduler.py` aktiv)
-- Grafikët në TrafficAnalytics
-- `https://semafori.vercel.app`
-
-## Referencat
-
-- Zhang, Y., Sun, P., Jiang, Y., et al. (2022). *ByteTrack: Multi-Object Tracking by Associating Every Detection Box*. ECCV 2022.
-- Jocher, G., Chaurasia, A., & Qiu, J. (2023). *Ultralytics YOLO*. https://github.com/ultralytics/ultralytics
-- Supervision by Roboflow. https://github.com/roboflow/supervision
-- Gjirafa Slow TV — live traffic cameras in Kosova. https://video.gjirafa.com/
-- Supabase — open-source Firebase alternative. https://supabase.com/
