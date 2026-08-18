@@ -53,7 +53,7 @@ const AboutPage = () => (
       {/* Hero */}
       <section className="text-center anim d1">
         <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-tblue-500/20">
-          <img src="/logo.PNG" alt="SEMAFORI" className="h-8 w-8 object-contain" />
+          <img src="/NewLogo.png" alt="SEMAFORI" className="h-8 w-8 object-contain" />
         </div>
         <h1 className="text-3xl font-semibold tracking-tight">About SEMAFORI</h1>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed" style={{ color: 'var(--text-dim)' }}>

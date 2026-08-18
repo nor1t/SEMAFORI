@@ -27,7 +27,7 @@ const SiteFooter = () => {
         {/* Brand */}
         <Link to="/cameras" className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-tblue-500/20">
-            <img src="/logo.PNG" alt="SEMAFORI Logo" className="h-4 w-4 object-contain" />
+            <img src="/NewLogo.png" alt="SEMAFORI Logo" className="h-4 w-4 object-contain" />
           </div>
           <span className={`font-serif text-xs font-semibold ${dark ? 'text-white' : 'text-navy-800'}`}>SEMAFORI</span>
         </Link>
