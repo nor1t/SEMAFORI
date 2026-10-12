@@ -1,17 +1,16 @@
 # SEMAFORI
 
-Sistem për menaxhimin e incidenteve në trafik dhe monitorim të trafikut në kohë
-reale, i ndërtuar me React, Python, Supabase, Leaflet, dhe Groq.
+A real-time traffic monitoring and incident management system built with React, Python, Supabase, Leaflet, and Groq.
 
-Përbëhet nga dy shërbime të ndara:
+It consists of two separate services:
 
-| Shërbimi            | Përshkrimi                                    | Teknologjitë              |
+| Service             | Description                                   | Technologies              |
 | ------------------- | --------------------------------------------- | ------------------------- |
-| **SEMAFORI** (ky repo) | React dashboard – frontend SPA             | React + Vite + Tailwind   |
-| **semafori-vision** | Python pipeline – kapje → detektim → numërim  | YOLOv8n + ByteTrack + FFmpeg |
+| **SEMAFORI** (this repo) | React dashboard – frontend SPA             | React + Vite + Tailwind   |
+| **semafori-vision** | Python pipeline – capture → detection → counting  | YOLOv8n + ByteTrack + FFmpeg |
 
 **Live URL:** https://semafori.vercel.app  
-**Statusi:** URL u verifikua më 5 maj 2026  
+**Status:** URL verified on May 5, 2026  
 
 ---
 
